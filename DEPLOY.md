@@ -1,110 +1,92 @@
 # SupplyPilot Deploy Notes
 
-## Current status
+## Current Status
 
 - Node/Railway backend is ready in `server.js`.
 - Railway start config is ready in `railway.json`.
 - Database init script is ready in `scripts/init-db.js`.
 - Real secrets must stay in Railway Variables or local `.env`; do not commit `.env`.
 
-## Railway variables
+## Railway Variables
 
-Set one of these in the Railway web service variables:
-
-```text
-MYSQL_PUBLIC_URL=mysql://USER:PASSWORD@HOST:PORT/DATABASE
-```
-
-For the Railway web service, the internal MySQL host is OK:
+Set this on the Railway web service:
 
 ```text
-MYSQL_PUBLIC_URL=mysql://admin:P%40ssw0rd@mysql.railway.internal:3306/stock
+MYSQL_PUBLIC_URL=mysql://USER:PASSWORD@mysql.railway.internal:3306/DATABASE
 ```
 
-Do not use `mysql.railway.internal` from your local computer. It only works between Railway services. For local import/testing, use the Railway Public Networking host such as `switchyard.proxy.rlwy.net:PORT`.
-
-or:
+The app also supports:
 
 ```text
 DATABASE_URL=mysql://USER:PASSWORD@HOST:PORT/DATABASE
 ```
 
-The app also supports separate MySQL variables:
+or separate MySQL variables:
 
 ```text
 MYSQLHOST=
-MYSQLPORT=
+MYSQLPORT=3306
 MYSQLUSER=
 MYSQLPASSWORD=
 MYSQLDATABASE=
 ```
 
-## Initialize database
+Use `mysql.railway.internal` only inside Railway. From your local computer, use the Railway Public Networking host such as `switchyard.proxy.rlwy.net:PUBLIC_PORT`.
 
-After dependencies are installed:
+## Railway Start
+
+Railway reads `railway.json` and runs:
 
 ```bash
-npm run init-db
+npm run railway:start
 ```
 
-Run this from a Railway shell/job or any machine that can reach the configured MySQL host. If `MYSQL_PUBLIC_URL` uses `mysql.railway.internal`, run it inside Railway only.
+That command initializes the database, then starts the web server:
+
+```bash
+node scripts/init-db.js && node server.js
+```
 
 The init script loads:
 
 - `stock_schema.sql`
 - `stock_fix_thai.sql`
 
-It removes local-only `CREATE DATABASE stock` and `USE stock` statements before running, so tables are created in the database from the Railway URL.
+It removes local-only `CREATE DATABASE stock` and `USE stock` statements before running, so tables are created in the database selected by the Railway URL.
 
-## Start
+## GitHub + Railway Checklist
 
-```bash
-npm start
+1. Create or open the GitHub repository.
+2. Point this local repo to GitHub:
+
+```powershell
+git remote set-url origin https://github.com/<owner>/<repo>.git
+git push -u origin main
 ```
 
-Railway uses `railway.json` and starts with:
+If you want to keep GitLab as `origin`, add GitHub separately:
 
-```bash
-npm start
+```powershell
+git remote add github https://github.com/<owner>/<repo>.git
+git push -u github main
 ```
 
-## Deploy checklist
-
-1. Push this project to GitLab.
-2. In Railway, create a new service from the GitLab repo.
-3. Set the web service variable:
+3. In Railway, create a new service from the GitHub repo.
+4. Add a Railway MySQL database service.
+5. Set the web service variable:
 
 ```text
-MYSQL_PUBLIC_URL=mysql://admin:PASSWORD@mysql.railway.internal:3306/stock
+MYSQL_PUBLIC_URL=mysql://USER:PASSWORD@mysql.railway.internal:3306/DATABASE
 ```
 
-4. Deploy the web service.
-5. Railway runs `npm run railway:start`, which initializes the database before starting the web server.
-6. Open the Railway generated domain and test product, sale, shipment, and tracking status actions.
+6. Deploy the web service.
+7. Open the Railway generated domain and test product, sale, shipment, and tracking status actions.
 
-## Local machine requirements
-
-To push and test locally on Windows, install:
-
-- Node.js LTS, which includes `node` and `npm`
-- Git for Windows
-
-Then run:
+## Local Commands
 
 ```powershell
 cd "D:\1.git\git\Personal Web"
 npm install
 npm run init-db
 npm start
-```
-
-For GitLab:
-
-```powershell
-git init
-git remote add origin https://gitlab.com/pairote.kmutnb/fashion_perfume_packaging.git
-git add .
-git commit -m "Deploy SupplyPilot Node app"
-git branch -M main
-git push -u origin main
 ```
