@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fashion & Perfume Supply Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">SP</span>
+        <div>
+          <strong>SupplyPilot</strong>
+          <small>Fashion & perfume packaging</small>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <a href="#overview" class="active">ภาพรวม</a>
+        <a href="#products">สินค้า</a>
+        <a href="#manage">จัดการ Stock</a>
+        <a href="#imports">นำเข้า</a>
+        <a href="#sales">ยอดขาย</a>
+        <a href="#alerts">แจ้งเตือน</a>
+      </nav>
+    </aside>
+
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">ระบบตัวอย่างสำหรับร้านค้า</p>
+          <h1>Stock, Sales และ Tracking นำเข้าจากจีน</h1>
+        </div>
+        <div class="top-actions">
+          <label class="search-box">
+            <span>ค้นหา</span>
+            <input id="searchInput" type="search" placeholder="ชื่อสินค้า / SKU / หมวดหมู่ / supplier" />
+          </label>
+          <button id="simulateSaleBtn" type="button">เพิ่มยอดขายตัวอย่าง</button>
+        </div>
+      </header>
+
+      <section id="overview" class="metrics-grid" aria-label="ภาพรวมธุรกิจ">
+        <article class="metric-card">
+          <span>ยอดขายเดือนนี้</span>
+          <strong id="monthlyRevenue">฿0</strong>
+          <small id="monthlyOrders">0 orders</small>
+        </article>
+        <article class="metric-card">
+          <span>มูลค่า Stock</span>
+          <strong id="stockValue">฿0</strong>
+          <small>คำนวณจากราคาทุนตัวอย่าง</small>
+        </article>
+        <article class="metric-card">
+          <span>สินค้าคงเหลือรวม</span>
+          <strong id="totalUnits">0</strong>
+          <small id="lowStockCount">0 รายการใกล้หมด</small>
+        </article>
+        <article class="metric-card">
+          <span>Shipment กำลังมา</span>
+          <strong id="incomingUnits">0</strong>
+          <small id="nearestEta">ETA -</small>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <section id="products" class="panel product-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Inventory</p>
+              <h2>รายการสินค้า</h2>
+            </div>
+            <select id="categoryFilter" aria-label="กรองหมวดหมู่สินค้า">
+              <option value="all">ทุกหมวดหมู่</option>
+            </select>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>สินค้า</th>
+                  <th>หมวดหมู่</th>
+                  <th>Supplier</th>
+                  <th>ราคา</th>
+                  <th>ขายแล้ว</th>
+                  <th>คงเหลือ</th>
+                  <th>สถานะ</th>
+                </tr>
+              </thead>
+              <tbody id="productTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="side-stack">
+          <section id="alerts" class="panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Stock alert</p>
+                <h2>สินค้าใกล้หมด</h2>
+              </div>
+            </div>
+            <div id="alertList" class="alert-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Top seller</p>
+                <h2>ขายดี</h2>
+              </div>
+            </div>
+            <div id="topSellerList" class="seller-list"></div>
+          </section>
+        </aside>
+      </section>
+
+      <section id="manage" class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Stock manager</p>
+            <h2>เพิ่ม ลบ และปรับจำนวนสินค้า</h2>
+          </div>
+          <span id="manageStatus" class="updated-at"></span>
+        </div>
+
+        <div class="manager-grid">
+          <form id="productForm" class="manager-card">
+            <h3>เพิ่มสินค้าใหม่</h3>
+            <label>
+              SKU
+              <input id="newSku" type="text" placeholder="เช่น SHIRT-TS-010 หรือ PKG-DIFF-200" required />
+            </label>
+            <label>
+              ชื่อสินค้า
+              <input id="newName" type="text" placeholder="ชื่อสินค้า" required />
+            </label>
+            <label>
+              หมวดหมู่
+              <select id="newCategory" required>
+                <option value="เสื้อ / เสื้อยืด">เสื้อ / เสื้อยืด</option>
+                <option value="เสื้อ / เสื้อโปโล">เสื้อ / เสื้อโปโล</option>
+                <option value="เสื้อ / เสื้อเชิ้ต">เสื้อ / เสื้อเชิ้ต</option>
+                <option value="กางเกง / กางเกงยีนส์">กางเกง / กางเกงยีนส์</option>
+                <option value="กางเกง / กางเกงขาสั้น">กางเกง / กางเกงขาสั้น</option>
+                <option value="กางเกง / กางเกงขายาว">กางเกง / กางเกงขายาว</option>
+                <option value="ขวด / ขวดน้ำหอม">ขวด / ขวดน้ำหอม</option>
+                <option value="ขวด / ขวดใส่ไม้น้ำหอม">ขวด / ขวดใส่ไม้น้ำหอม</option>
+              </select>
+            </label>
+            <label>
+              Supplier
+              <input id="newSupplier" type="text" placeholder="Supplier จากจีน" required />
+            </label>
+            <div class="form-row">
+              <label>
+                ราคาขาย
+                <input id="newPrice" type="number" min="0" step="1" required />
+              </label>
+              <label>
+                ทุน
+                <input id="newCost" type="number" min="0" step="1" required />
+              </label>
+            </div>
+            <div class="form-row">
+              <label>
+                Stock เริ่มต้น
+                <input id="newStock" type="number" min="0" step="1" required />
+              </label>
+              <label>
+                จุดเตือนเติม
+                <input id="newReorder" type="number" min="0" step="1" required />
+              </label>
+            </div>
+            <button type="submit">เพิ่มสินค้า</button>
+          </form>
+
+          <section class="manager-card">
+            <h3>ปรับจำนวน Stock</h3>
+            <label>
+              เลือกสินค้า
+              <select id="stockProductSelect"></select>
+            </label>
+            <div class="form-row">
+              <label>
+                จำนวน
+                <input id="stockQty" type="number" min="0" step="1" value="1" />
+              </label>
+              <label>
+                วิธีปรับ
+                <select id="stockAction">
+                  <option value="add">รับเข้า Stock</option>
+                  <option value="remove">ตัดออกจาก Stock</option>
+                  <option value="set">ตั้งจำนวนคงเหลือ</option>
+                </select>
+              </label>
+            </div>
+            <button id="adjustStockBtn" type="button">บันทึกจำนวน</button>
+          </section>
+        </div>
+
+        <div class="table-wrap manage-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>สินค้า</th>
+                <th>หมวดหมู่</th>
+                <th>Supplier</th>
+                <th>คงเหลือ</th>
+                <th>จุดเตือน</th>
+                <th>จัดการ</th>
+              </tr>
+            </thead>
+            <tbody id="manageTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="imports" class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">China to Thailand</p>
+            <h2>Tracking สินค้านำเข้า</h2>
+          </div>
+          <span id="trackingStatusText" class="updated-at">แบ่งสถานะก่อนสินค้าถึงไทย</span>
+        </div>
+        <div class="tracking-manager">
+          <form id="trackingStatusForm" class="manager-card">
+            <h3>อัปเดตสถานะปัจจุบัน</h3>
+            <label>
+              Shipment
+              <select id="trackingShipmentSelect"></select>
+            </label>
+            <label>
+              สถานะล่าสุด
+              <select id="trackingStageSelect"></select>
+            </label>
+            <div class="tracking-actions">
+              <button id="trackingPrevBtn" class="secondary-button" type="button">ถอยสถานะ</button>
+              <button id="trackingNextBtn" type="button">ไปสถานะถัดไป</button>
+              <button type="submit">บันทึกสถานะ</button>
+            </div>
+          </form>
+
+          <section class="manager-card">
+            <h3>เพิ่ม / ลบขั้นตอน Tracking</h3>
+            <div class="form-row">
+              <label>
+                ชื่อขั้นตอน
+                <input id="newStageName" type="text" placeholder="เช่น ถึงด่านไทย" />
+              </label>
+              <label>
+                วันที่
+                <input id="newStageDate" type="date" />
+              </label>
+            </div>
+            <div class="tracking-actions">
+              <button id="addStageBtn" type="button">เพิ่มขั้นตอน</button>
+              <button id="removeStageBtn" class="danger-button" type="button">ลบขั้นตอนล่าสุด</button>
+            </div>
+          </section>
+
+          <form id="shipmentForm" class="manager-card shipment-create-card">
+            <h3>เพิ่ม Shipment ใหม่</h3>
+            <div class="shipment-form-grid">
+              <label>
+                Shipment No.
+                <input id="shipmentNo" type="text" placeholder="เช่น CN-IMP-7715" required />
+              </label>
+              <label>
+                ชื่อ Lot / รายการสินค้า
+                <input id="shipmentTitle" type="text" placeholder="เช่น ขวดน้ำหอม Lot May" required />
+              </label>
+              <label>
+                เมืองต้นทาง
+                <input id="shipmentOrigin" type="text" placeholder="เช่น Guangzhou" required />
+              </label>
+              <label>
+                ปลายทาง
+                <input id="shipmentDestination" type="text" placeholder="เช่น คลังบางนา, Thailand" required />
+              </label>
+              <label>
+                วิธีขนส่ง
+                <select id="shipmentMode" required>
+                  <option value="Sea + Truck">Sea + Truck</option>
+                  <option value="Air cargo">Air cargo</option>
+                  <option value="Sea freight">Sea freight</option>
+                  <option value="Truck">Truck</option>
+                </select>
+              </label>
+              <label>
+                ETA
+                <input id="shipmentEta" type="date" required />
+              </label>
+              <label>
+                จำนวนรวม
+                <input id="shipmentUnits" type="number" min="1" step="1" placeholder="เช่น 1200" required />
+              </label>
+              <label>
+                สถานะแรก
+                <input id="shipmentFirstStage" type="text" value="ยืนยัน Order" required />
+              </label>
+              <label>
+                วันที่สถานะแรก
+                <input id="shipmentFirstStageDate" type="date" required />
+              </label>
+            </div>
+            <button type="submit">เพิ่ม Shipment</button>
+          </form>
+        </div>
+        <div id="shipmentList" class="shipment-list"></div>
+      </section>
+
+      <section id="sales" class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Sales log</p>
+            <h2>รายการขายล่าสุด</h2>
+          </div>
+          <span id="lastUpdated" class="updated-at"></span>
+        </div>
+        <div id="salesList" class="sales-list"></div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

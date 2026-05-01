@@ -1,0 +1,568 @@
+const express = require("express");
+const mysql = require("mysql2/promise");
+const fs = require("fs");
+const path = require("path");
+
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return;
+
+  const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const equalsAt = trimmed.indexOf("=");
+    if (equalsAt === -1) continue;
+
+    const key = trimmed.slice(0, equalsAt).trim();
+    const rawValue = trimmed.slice(equalsAt + 1).trim();
+    const value = rawValue.replace(/^["']|["']$/g, "");
+    if (key && process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
+
+loadEnvFile(path.join(__dirname, ".env"));
+
+const app = express();
+const port = Number(process.env.PORT || 3000);
+const root = __dirname;
+
+app.use(express.json());
+app.use(express.static(root));
+
+const databaseUrl = process.env.MYSQL_PUBLIC_URL || process.env.DATABASE_URL || process.env.MYSQL_URL;
+
+function mysqlConfig() {
+  if (databaseUrl) {
+    return {
+      uri: databaseUrl,
+      charset: "utf8mb4",
+      decimalNumbers: true,
+      dateStrings: true,
+      multipleStatements: true,
+    };
+  }
+
+  return {
+    host: process.env.MYSQLHOST || "localhost",
+    port: Number(process.env.MYSQLPORT || 3306),
+    user: process.env.MYSQLUSER || "root",
+    password: process.env.MYSQLPASSWORD || "",
+    database: process.env.MYSQLDATABASE || "stock",
+    charset: "utf8mb4",
+    decimalNumbers: true,
+    dateStrings: true,
+    multipleStatements: true,
+  };
+}
+
+const pool = mysql.createPool({
+  ...mysqlConfig(),
+  waitForConnections: true,
+  connectionLimit: Number(process.env.MYSQL_CONNECTION_LIMIT || 5),
+});
+
+async function query(sql, params = []) {
+  const [rows] = await pool.execute(sql, params);
+  return rows;
+}
+
+async function transaction(work) {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const result = await work(connection);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+function asyncRoute(handler) {
+  return (request, response, next) => {
+    Promise.resolve(handler(request, response, next)).catch(next);
+  };
+}
+
+function toDateText(value) {
+  if (!value) return value;
+  if (typeof value === "string") return value.slice(0, 10);
+  return value.toISOString().slice(0, 10);
+}
+
+async function getProducts() {
+  const rows = await query(`
+    SELECT
+      p.id,
+      p.sku,
+      p.name,
+      c.name AS category,
+      s.name AS supplier,
+      p.selling_price AS price,
+      p.cost_price AS cost,
+      p.stock_quantity AS stock,
+      p.reorder_point AS reorderPoint,
+      COALESCE(SUM(soi.quantity), 0) AS sold
+    FROM products p
+    JOIN categories c ON c.id = p.category_id
+    JOIN suppliers s ON s.id = p.supplier_id
+    LEFT JOIN sales_order_items soi ON soi.product_id = p.id
+    WHERE p.status = 'active'
+    GROUP BY p.id, p.sku, p.name, c.name, s.name, p.selling_price, p.cost_price, p.stock_quantity, p.reorder_point
+    ORDER BY p.id
+  `);
+
+  return rows.map((row) => ({
+    ...row,
+    id: Number(row.id),
+    stock: Number(row.stock),
+    reorderPoint: Number(row.reorderPoint),
+    sold: Number(row.sold),
+  }));
+}
+
+async function getSales() {
+  const rows = await query(`
+    SELECT
+      so.order_no AS \`order\`,
+      p.sku,
+      soi.quantity AS qty,
+      COALESCE(c.name, 'Walk-in') AS customer,
+      so.order_date AS date,
+      so.total_amount AS total
+    FROM sales_orders so
+    JOIN sales_order_items soi ON soi.sales_order_id = so.id
+    JOIN products p ON p.id = soi.product_id
+    LEFT JOIN customers c ON c.id = so.customer_id
+    WHERE so.status <> 'cancelled'
+    ORDER BY so.order_date DESC, so.id DESC
+    LIMIT 50
+  `);
+
+  return rows.map((row) => ({
+    ...row,
+    qty: Number(row.qty),
+    date: toDateText(row.date),
+  }));
+}
+
+async function getShipments() {
+  const rows = await query(`
+    SELECT
+      sh.shipment_no,
+      sh.title,
+      sh.origin_city,
+      sh.origin_country,
+      sh.destination,
+      sh.eta_date,
+      sh.total_units,
+      sh.transport_mode,
+      sh.current_stage_index,
+      ts.stage_index,
+      ts.stage_name,
+      ts.planned_date
+    FROM import_shipments sh
+    LEFT JOIN import_tracking_stages ts ON ts.shipment_id = sh.id
+    WHERE sh.status <> 'cancelled'
+    ORDER BY sh.eta_date ASC, sh.id ASC, ts.stage_index ASC
+  `);
+
+  const shipmentsByNo = new Map();
+
+  for (const row of rows) {
+    if (!shipmentsByNo.has(row.shipment_no)) {
+      shipmentsByNo.set(row.shipment_no, {
+        id: row.shipment_no,
+        title: row.title,
+        origin: `${row.origin_city}, ${row.origin_country}`,
+        destination: row.destination,
+        eta: toDateText(row.eta_date),
+        units: Number(row.total_units),
+        mode: row.transport_mode,
+        currentStage: Number(row.current_stage_index),
+        stages: [],
+      });
+    }
+
+    if (row.stage_name) {
+      shipmentsByNo.get(row.shipment_no).stages.push({
+        label: row.stage_name,
+        date: toDateText(row.planned_date),
+      });
+    }
+  }
+
+  return [...shipmentsByNo.values()];
+}
+
+app.get("/api/products", asyncRoute(async (_request, response) => {
+  response.json(await getProducts());
+}));
+
+app.get("/api/sales", asyncRoute(async (_request, response) => {
+  response.json(await getSales());
+}));
+
+app.get("/api/shipments", asyncRoute(async (_request, response) => {
+  response.json(await getShipments());
+}));
+
+app.post("/api/products", asyncRoute(async (request, response) => {
+  const payload = request.body;
+
+  await transaction(async (connection) => {
+    await connection.execute(
+      `
+        INSERT INTO categories (name, parent_name)
+        VALUES (?, SUBSTRING_INDEX(?, ' / ', 1))
+        ON DUPLICATE KEY UPDATE parent_name = VALUES(parent_name)
+      `,
+      [payload.category, payload.category]
+    );
+
+    await connection.execute(
+      `
+        INSERT INTO suppliers (name, country)
+        VALUES (?, 'China')
+        ON DUPLICATE KEY UPDATE name = VALUES(name)
+      `,
+      [payload.supplier]
+    );
+
+    await connection.execute(
+      `
+        INSERT INTO products
+          (sku, name, category_id, supplier_id, selling_price, cost_price, stock_quantity, reorder_point)
+        SELECT ?, ?, c.id, s.id, ?, ?, ?, ?
+        FROM categories c
+        JOIN suppliers s ON s.name = ?
+        WHERE c.name = ?
+      `,
+      [
+        payload.sku,
+        payload.name,
+        Number(payload.price || 0),
+        Number(payload.cost || 0),
+        Number(payload.stock || 0),
+        Number(payload.reorderPoint || 0),
+        payload.supplier,
+        payload.category,
+      ]
+    );
+
+    await connection.execute(
+      `
+        INSERT INTO inventory_movements (product_id, movement_type, quantity, balance_after, reference_type, note)
+        SELECT id, 'opening', stock_quantity, stock_quantity, 'web', 'เพิ่มสินค้าจากหน้าเว็บ'
+        FROM products
+        WHERE sku = ?
+      `,
+      [payload.sku]
+    );
+  });
+
+  response.json({ ok: true, products: await getProducts() });
+}));
+
+app.delete("/api/products/:sku", asyncRoute(async (request, response) => {
+  await transaction(async (connection) => {
+    const params = [request.params.sku];
+
+    await connection.execute(
+      `
+        DELETE im
+        FROM inventory_movements im
+        JOIN products p ON p.id = im.product_id
+        WHERE p.sku = ?
+      `,
+      params
+    );
+
+    await connection.execute(
+      `
+        DELETE isi
+        FROM import_shipment_items isi
+        JOIN products p ON p.id = isi.product_id
+        WHERE p.sku = ?
+      `,
+      params
+    );
+
+    await connection.execute(
+      `
+        DELETE soi
+        FROM sales_order_items soi
+        JOIN products p ON p.id = soi.product_id
+        WHERE p.sku = ?
+      `,
+      params
+    );
+
+    await connection.execute(`
+      DELETE so
+      FROM sales_orders so
+      LEFT JOIN sales_order_items soi ON soi.sales_order_id = so.id
+      WHERE soi.id IS NULL
+    `);
+
+    await connection.execute("DELETE FROM products WHERE sku = ?", params);
+  });
+
+  response.json({ ok: true, products: await getProducts() });
+}));
+
+app.post("/api/stock", asyncRoute(async (request, response) => {
+  const { sku, action } = request.body;
+  const qty = Math.max(0, Number(request.body.qty || 0));
+
+  const updateSqlByAction = {
+    add: "stock_quantity = stock_quantity + ?",
+    remove: "stock_quantity = GREATEST(0, stock_quantity - ?)",
+    set: "stock_quantity = ?",
+  };
+  const movementByAction = {
+    add: "adjust_in",
+    remove: "adjust_out",
+    set: "set_balance",
+  };
+
+  const updateSql = updateSqlByAction[action] || updateSqlByAction.set;
+  const movement = movementByAction[action] || movementByAction.set;
+
+  await transaction(async (connection) => {
+    await connection.execute(`UPDATE products SET ${updateSql} WHERE sku = ?`, [qty, sku]);
+    await connection.execute(
+      `
+        INSERT INTO inventory_movements (product_id, movement_type, quantity, balance_after, reference_type, note)
+        SELECT id, ?, ?, stock_quantity, 'web', 'ปรับ stock จากหน้าเว็บ'
+        FROM products
+        WHERE sku = ?
+      `,
+      [movement, qty, sku]
+    );
+  });
+
+  response.json({ ok: true, products: await getProducts() });
+}));
+
+app.post("/api/sales/sample", asyncRoute(async (request, response) => {
+  const { sku } = request.body;
+  const qty = Math.max(1, Number(request.body.qty || 1));
+  const customer = request.body.customer || "Sample customer";
+
+  await transaction(async (connection) => {
+    await connection.execute(
+      `
+        INSERT INTO customers (name, customer_type)
+        VALUES (?, 'online')
+        ON DUPLICATE KEY UPDATE name = VALUES(name)
+      `,
+      [customer]
+    );
+
+    const [orderResult] = await connection.execute(
+      `
+        INSERT INTO sales_orders (order_no, customer_id, order_date, total_amount)
+        SELECT CONCAT('SO-WEB-', DATE_FORMAT(NOW(6), '%Y%m%d%H%i%s%f')), c.id, CURDATE(), ? * p.selling_price
+        FROM customers c
+        JOIN products p ON p.sku = ?
+        WHERE c.name = ?
+          AND p.status = 'active'
+          AND p.stock_quantity > 0
+      `,
+      [qty, sku, customer]
+    );
+
+    await connection.execute(
+      `
+        INSERT INTO sales_order_items (sales_order_id, product_id, quantity, unit_price, unit_cost)
+        SELECT ?, p.id, LEAST(?, p.stock_quantity), p.selling_price, p.cost_price
+        FROM products p
+        WHERE p.sku = ?
+          AND p.status = 'active'
+          AND p.stock_quantity > 0
+      `,
+      [orderResult.insertId, qty, sku]
+    );
+
+    await connection.execute(
+      `
+        UPDATE products
+        SET stock_quantity = GREATEST(0, stock_quantity - ?)
+        WHERE sku = ?
+          AND status = 'active'
+      `,
+      [qty, sku]
+    );
+
+    await connection.execute(
+      `
+        INSERT INTO inventory_movements (product_id, movement_type, quantity, balance_after, reference_type, reference_id, note)
+        SELECT p.id, 'sale_out', ?, p.stock_quantity, 'sales_order', ?, 'ขายตัวอย่างจากหน้าเว็บ'
+        FROM products p
+        WHERE p.sku = ?
+          AND p.status = 'active'
+      `,
+      [qty, orderResult.insertId, sku]
+    );
+  });
+
+  response.json({ ok: true, products: await getProducts(), sales: await getSales() });
+}));
+
+app.post("/api/shipments", asyncRoute(async (request, response) => {
+  const payload = request.body;
+  const units = Number(payload.units || 0);
+
+  if (units < 1) {
+    response.status(400).json({ error: "Shipment units must be greater than zero" });
+    return;
+  }
+
+  await transaction(async (connection) => {
+    const [shipmentResult] = await connection.execute(
+      `
+        INSERT INTO import_shipments
+          (shipment_no, title, origin_city, origin_country, destination, transport_mode, eta_date, total_units, current_stage_index, status)
+        VALUES (?, ?, ?, 'China', ?, ?, ?, ?, 0, 'preparing')
+      `,
+      [
+        payload.shipmentNo,
+        payload.title,
+        payload.originCity,
+        payload.destination,
+        payload.mode,
+        payload.eta,
+        units,
+      ]
+    );
+
+    await connection.execute(
+      `
+        INSERT INTO import_tracking_stages (shipment_id, stage_index, stage_name, planned_date, completed_at)
+        VALUES (?, 0, ?, ?, NOW())
+      `,
+      [shipmentResult.insertId, payload.firstStage, payload.firstStageDate]
+    );
+  });
+
+  response.json({ ok: true, shipments: await getShipments() });
+}));
+
+app.post("/api/shipments/status", asyncRoute(async (request, response) => {
+  const { shipmentNo } = request.body;
+  const currentStage = Number(request.body.currentStage || 0);
+
+  await transaction(async (connection) => {
+    await connection.execute(
+      `
+        UPDATE import_shipments sh
+        JOIN (
+          SELECT shipment_id, MAX(stage_index) AS max_stage
+          FROM import_tracking_stages
+          GROUP BY shipment_id
+        ) stages ON stages.shipment_id = sh.id
+        SET
+          sh.current_stage_index = GREATEST(0, LEAST(?, stages.max_stage)),
+          sh.status = CASE
+            WHEN GREATEST(0, LEAST(?, stages.max_stage)) >= stages.max_stage THEN 'arrived'
+            WHEN GREATEST(0, LEAST(?, stages.max_stage)) >= 5 THEN 'customs'
+            ELSE 'in_transit'
+          END
+        WHERE sh.shipment_no = ?
+      `,
+      [currentStage, currentStage, currentStage, shipmentNo]
+    );
+
+    await connection.execute(
+      `
+        UPDATE import_tracking_stages ts
+        JOIN import_shipments sh ON sh.id = ts.shipment_id
+        SET ts.completed_at = CASE
+          WHEN ts.stage_index <= sh.current_stage_index THEN COALESCE(ts.completed_at, NOW())
+          ELSE NULL
+        END
+        WHERE sh.shipment_no = ?
+      `,
+      [shipmentNo]
+    );
+  });
+
+  response.json({ ok: true, shipments: await getShipments() });
+}));
+
+app.post("/api/shipments/stages", asyncRoute(async (request, response) => {
+  const { shipmentNo, label, date } = request.body;
+
+  await transaction(async (connection) => {
+    await connection.execute(
+      `
+        INSERT INTO import_tracking_stages (shipment_id, stage_index, stage_name, planned_date)
+        SELECT sh.id, COALESCE(MAX(ts.stage_index), -1) + 1, ?, ?
+        FROM import_shipments sh
+        LEFT JOIN import_tracking_stages ts ON ts.shipment_id = sh.id
+        WHERE sh.shipment_no = ?
+        GROUP BY sh.id
+      `,
+      [label, date, shipmentNo]
+    );
+  });
+
+  response.json({ ok: true, shipments: await getShipments() });
+}));
+
+app.delete("/api/shipments/:shipmentNo/stages/last", asyncRoute(async (request, response) => {
+  await transaction(async (connection) => {
+    await connection.execute(
+      `
+        DELETE ts
+        FROM import_tracking_stages ts
+        JOIN import_shipments sh ON sh.id = ts.shipment_id
+        JOIN (
+          SELECT shipment_id, MAX(stage_index) AS max_stage, COUNT(*) AS stage_count
+          FROM import_tracking_stages
+          GROUP BY shipment_id
+        ) last_stage ON last_stage.shipment_id = ts.shipment_id
+        WHERE sh.shipment_no = ?
+          AND ts.stage_index = last_stage.max_stage
+          AND last_stage.stage_count > 1
+      `,
+      [request.params.shipmentNo]
+    );
+
+    await connection.execute(
+      `
+        UPDATE import_shipments sh
+        JOIN (
+          SELECT shipment_id, MAX(stage_index) AS max_stage
+          FROM import_tracking_stages
+          GROUP BY shipment_id
+        ) stages ON stages.shipment_id = sh.id
+        SET sh.current_stage_index = LEAST(sh.current_stage_index, stages.max_stage)
+        WHERE sh.shipment_no = ?
+      `,
+      [request.params.shipmentNo]
+    );
+  });
+
+  response.json({ ok: true, shipments: await getShipments() });
+}));
+
+app.get("*", (_request, response) => {
+  response.sendFile(path.join(root, "index.html"));
+});
+
+app.use((error, _request, response, _next) => {
+  console.error(error);
+  response.status(500).json({ error: error.message || "Internal server error" });
+});
+
+app.listen(port, () => {
+  console.log(`SupplyPilot running on port ${port}`);
+});
