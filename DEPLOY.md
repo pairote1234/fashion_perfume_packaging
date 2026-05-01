@@ -18,7 +18,7 @@ MYSQL_PUBLIC_URL=mysql://USER:PASSWORD@HOST:PORT/DATABASE
 For the Railway web service, the internal MySQL host is OK:
 
 ```text
-MYSQL_PUBLIC_URL=mysql://admin:PASSWORD@mysql.railway.internal:3306/railway
+MYSQL_PUBLIC_URL=mysql://admin:P%40ssw0rd@mysql.railway.internal:3306/stock
 ```
 
 Do not use `mysql.railway.internal` from your local computer. It only works between Railway services. For local import/testing, use the Railway Public Networking host such as `switchyard.proxy.rlwy.net:PORT`.
