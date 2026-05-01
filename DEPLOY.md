@@ -18,7 +18,7 @@ MYSQL_PUBLIC_URL=mysql://USER:PASSWORD@HOST:PORT/DATABASE
 For the Railway web service, the internal MySQL host is OK:
 
 ```text
-MYSQL_PUBLIC_URL=mysql://admin:PASSWORD@mysql.railway.internal:3306/stock
+MYSQL_PUBLIC_URL=mysql://admin:PASSWORD@mysql.railway.internal:3306/railway
 ```
 
 Do not use `mysql.railway.internal` from your local computer. It only works between Railway services. For local import/testing, use the Railway Public Networking host such as `switchyard.proxy.rlwy.net:PORT`.
@@ -79,15 +79,8 @@ MYSQL_PUBLIC_URL=mysql://admin:PASSWORD@mysql.railway.internal:3306/stock
 ```
 
 4. Deploy the web service.
-5. Open a Railway shell or one-off job for the web service.
-6. Run:
-
-```bash
-npm run init-db
-```
-
-7. Restart/redeploy the web service.
-8. Open the Railway generated domain and test product, sale, shipment, and tracking status actions.
+5. Railway runs `npm run railway:start`, which initializes the database before starting the web server.
+6. Open the Railway generated domain and test product, sale, shipment, and tracking status actions.
 
 ## Local machine requirements
 

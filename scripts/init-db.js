@@ -60,12 +60,32 @@ function readSql(fileName) {
     .replace(/USE\s+`?stock`?\s*;/i, "");
 }
 
+async function tableHasRows(connection, tableName) {
+  try {
+    const [rows] = await connection.query(`SELECT COUNT(*) AS total FROM \`${tableName}\``);
+    return Number(rows[0]?.total || 0) > 0;
+  } catch (error) {
+    if (error && error.code === "ER_NO_SUCH_TABLE") return false;
+    throw error;
+  }
+}
+
 async function main() {
   const connection = await mysql.createConnection(config());
 
   try {
     await connection.query("SET NAMES utf8mb4");
-    await connection.query(readSql("stock_schema.sql"));
+    const schemaSql = readSql("stock_schema.sql");
+    const firstSeedAt = schemaSql.search(/\bINSERT\b/i);
+    const ddlSql = firstSeedAt === -1 ? schemaSql : schemaSql.slice(0, firstSeedAt);
+    const seedSql = firstSeedAt === -1 ? "" : schemaSql.slice(firstSeedAt);
+
+    await connection.query(ddlSql);
+
+    const alreadySeeded = await tableHasRows(connection, "products");
+    if (!alreadySeeded && seedSql.trim()) {
+      await connection.query(seedSql);
+    }
 
     const fixPath = path.join(root, "stock_fix_thai.sql");
     if (fs.existsSync(fixPath)) {
