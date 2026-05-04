@@ -483,6 +483,12 @@ th {
   padding: 5px 9px;
 }
 
+.shipment-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
 .progress-bar {
   height: 8px;
   background: #e7ece8;

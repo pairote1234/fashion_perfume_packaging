@@ -399,6 +399,9 @@ function renderShipments() {
             <span style="width: ${progress}%"></span>
           </div>
           <ol class="tracking-steps">${stageHtml}</ol>
+          <div class="shipment-actions">
+            <button class="danger-button" type="button" data-delete-shipment="${shipment.id}">ลบ Shipment</button>
+          </div>
         </article>
       `;
     })
@@ -753,6 +756,31 @@ async function removeLastTrackingStage() {
   }
 }
 
+async function deleteShipment(shipmentNo) {
+  const shipmentIndex = shipments.findIndex((shipment) => shipment.id === shipmentNo);
+  if (shipmentIndex < 0) return;
+
+  const shipment = shipments[shipmentIndex];
+  const shouldDelete = window.confirm(`ลบ Shipment ${shipment.id} ใช่ไหม?`);
+  if (!shouldDelete) return;
+
+  try {
+    const result = await apiRequest(`/api/shipments/${encodeURIComponent(shipment.id)}`, {
+      method: "DELETE",
+    });
+
+    syncShipments(result.shipments);
+    render();
+    renderTrackingControls();
+    setTrackingStatus(`ลบ Shipment ${shipment.id} แล้ว`);
+  } catch (error) {
+    shipments.splice(shipmentIndex, 1);
+    render();
+    renderTrackingControls();
+    setTrackingStatus(`ลบ Shipment ${shipment.id} เฉพาะในหน้าเว็บ เพราะยังไม่ต่อ server`);
+  }
+}
+
 async function addShipment(event) {
   event.preventDefault();
 
@@ -862,6 +890,13 @@ trackingNextBtn.addEventListener("click", () => {
 addStageBtn.addEventListener("click", addTrackingStage);
 removeStageBtn.addEventListener("click", removeLastTrackingStage);
 shipmentForm.addEventListener("submit", addShipment);
+document.querySelector("#shipmentList").addEventListener("click", (event) => {
+  const deleteShipmentNo = event.target.dataset.deleteShipment;
+
+  if (deleteShipmentNo) {
+    deleteShipment(deleteShipmentNo);
+  }
+});
 manageTable.addEventListener("click", (event) => {
   const deleteSku = event.target.dataset.deleteSku;
 

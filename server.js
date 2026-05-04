@@ -554,6 +554,36 @@ app.delete("/api/shipments/:shipmentNo/stages/last", asyncRoute(async (request, 
   response.json({ ok: true, shipments: await getShipments() });
 }));
 
+app.delete("/api/shipments/:shipmentNo", asyncRoute(async (request, response) => {
+  await transaction(async (connection) => {
+    const params = [request.params.shipmentNo];
+
+    await connection.execute(
+      `
+        DELETE ts
+        FROM import_tracking_stages ts
+        JOIN import_shipments sh ON sh.id = ts.shipment_id
+        WHERE sh.shipment_no = ?
+      `,
+      params
+    );
+
+    await connection.execute(
+      `
+        DELETE isi
+        FROM import_shipment_items isi
+        JOIN import_shipments sh ON sh.id = isi.shipment_id
+        WHERE sh.shipment_no = ?
+      `,
+      params
+    );
+
+    await connection.execute("DELETE FROM import_shipments WHERE shipment_no = ?", params);
+  });
+
+  response.json({ ok: true, shipments: await getShipments() });
+}));
+
 app.get("*", (_request, response) => {
   response.sendFile(path.join(root, "index.html"));
 });
