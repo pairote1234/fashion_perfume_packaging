@@ -108,13 +108,19 @@ async function getProducts() {
       p.cost_price AS cost,
       p.stock_quantity AS stock,
       p.reorder_point AS reorderPoint,
-      COALESCE(SUM(soi.quantity), 0) AS sold
+      COALESCE(sold_items.sold, 0) AS sold
     FROM products p
     JOIN categories c ON c.id = p.category_id
     JOIN suppliers s ON s.id = p.supplier_id
-    LEFT JOIN sales_order_items soi ON soi.product_id = p.id
+    LEFT JOIN (
+      SELECT soi.product_id, SUM(soi.quantity) AS sold
+      FROM sales_order_items soi
+      JOIN sales_orders so ON so.id = soi.sales_order_id
+      WHERE so.status <> 'cancelled'
+      GROUP BY soi.product_id
+    ) sold_items ON sold_items.product_id = p.id
     WHERE p.status = 'active'
-    GROUP BY p.id, p.sku, p.name, c.name, s.name, p.selling_price, p.cost_price, p.stock_quantity, p.reorder_point
+    GROUP BY p.id, p.sku, p.name, c.name, s.name, p.selling_price, p.cost_price, p.stock_quantity, p.reorder_point, sold_items.sold
     ORDER BY p.id
   `);
 
