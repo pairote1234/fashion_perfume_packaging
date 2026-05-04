@@ -174,6 +174,7 @@ const productTable = document.querySelector("#productTable");
 const categoryFilter = document.querySelector("#categoryFilter");
 const searchInput = document.querySelector("#searchInput");
 const simulateSaleBtn = document.querySelector("#simulateSaleBtn");
+simulateSaleBtn.textContent = "จัดการยอดขาย";
 const productForm = document.querySelector("#productForm");
 const stockProductSelect = document.querySelector("#stockProductSelect");
 const adjustStockBtn = document.querySelector("#adjustStockBtn");
@@ -188,6 +189,15 @@ const addStageBtn = document.querySelector("#addStageBtn");
 const removeStageBtn = document.querySelector("#removeStageBtn");
 const trackingStatusText = document.querySelector("#trackingStatusText");
 const shipmentForm = document.querySelector("#shipmentForm");
+const salesForm = document.querySelector("#salesForm");
+const saleProductSelect = document.querySelector("#saleProductSelect");
+const saleQty = document.querySelector("#saleQty");
+const saleCustomer = document.querySelector("#saleCustomer");
+const saleDate = document.querySelector("#saleDate");
+const editingOrderNo = document.querySelector("#editingOrderNo");
+const salesFormTitle = document.querySelector("#salesFormTitle");
+const salesStatus = document.querySelector("#salesStatus");
+const cancelSaleEditBtn = document.querySelector("#cancelSaleEditBtn");
 const viewBlocks = {
   overview: document.querySelector("#overview"),
   content: document.querySelector(".content-grid"),
@@ -467,9 +477,10 @@ function renderTrackingControls() {
 
 function renderSales() {
   const salesList = document.querySelector("#salesList");
+  renderSalesControls();
 
   salesList.innerHTML = sales
-    .slice(0, 6)
+    .slice(0, 12)
     .map((sale) => {
       const product = productBySku(sale.sku);
       if (!product) return "";
@@ -478,9 +489,13 @@ function renderSales() {
           <div>
             <strong>${sale.order}</strong>
             <small>${product.name}</small>
-            <small>${sale.customer} | ${sale.date}</small>
+            <small>${sale.customer} | ${sale.date} | ${sale.qty.toLocaleString("th-TH")} ชิ้น</small>
           </div>
           <span class="sale-amount">${money(product.price * sale.qty)}</span>
+          <div class="sale-actions">
+            <button class="secondary-button" type="button" data-edit-sale="${sale.order}">แก้ไข</button>
+            <button class="danger-button" type="button" data-delete-sale="${sale.order}">ลบ</button>
+          </div>
         </article>
       `;
     })
@@ -585,6 +600,41 @@ function setTrackingStatus(message) {
   if (trackingStatusText) {
     trackingStatusText.textContent = message;
   }
+}
+
+function setSalesStatus(message) {
+  if (salesStatus) {
+    salesStatus.textContent = message;
+  }
+}
+
+function renderSalesControls() {
+  if (!saleProductSelect) return;
+
+  const selectedSku = saleProductSelect.value || products[0]?.sku || "";
+  saleProductSelect.innerHTML = products
+    .map((product) => `<option value="${product.sku}">${product.sku} - ${product.name} (${product.stock} คงเหลือ)</option>`)
+    .join("");
+
+  if (selectedSku) {
+    saleProductSelect.value = selectedSku;
+  }
+
+  if (saleDate && !saleDate.value) {
+    saleDate.value = new Date().toISOString().slice(0, 10);
+  }
+}
+
+function resetSaleForm() {
+  if (!salesForm) return;
+
+  salesForm.reset();
+  editingOrderNo.value = "";
+  salesFormTitle.textContent = "เพิ่มยอดขาย";
+  saleQty.value = "1";
+  saleCustomer.value = "Walk-in";
+  saleDate.value = new Date().toISOString().slice(0, 10);
+  renderSalesControls();
 }
 
 function numberFromInput(selector) {
@@ -843,6 +893,13 @@ async function addShipment(event) {
 }
 
 async function addSampleSale() {
+  document.querySelectorAll(".nav a").forEach((navLink) => {
+    navLink.classList.toggle("active", navLink.getAttribute("href") === "#sales");
+  });
+  showView("sales");
+  document.querySelector("#sales")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  return;
+
   const availableProducts = products.filter((product) => product.stock > 0);
   const product = availableProducts[Math.floor(Math.random() * availableProducts.length)];
   const qty = Math.min(product.stock, Math.floor(Math.random() * 6) + 1);
@@ -880,6 +937,68 @@ async function addSampleSale() {
   render();
 }
 
+async function saveSale(event) {
+  event.preventDefault();
+
+  const payload = {
+    sku: saleProductSelect.value,
+    qty: Number(saleQty.value || 1),
+    customer: saleCustomer.value.trim() || "Walk-in",
+    date: saleDate.value || new Date().toISOString().slice(0, 10),
+  };
+  const orderNo = editingOrderNo.value;
+
+  try {
+    const result = await apiRequest(orderNo ? `/api/sales/${encodeURIComponent(orderNo)}` : "/api/sales", {
+      method: orderNo ? "PUT" : "POST",
+      body: JSON.stringify(payload),
+    });
+
+    syncProducts(result.products);
+    syncSales(result.sales);
+    resetSaleForm();
+    render();
+    showView("sales");
+    setSalesStatus(orderNo ? `แก้ไขยอดขาย ${orderNo} แล้ว` : "บันทึกยอดขายแล้ว");
+  } catch (error) {
+    setSalesStatus(`ยังบันทึกยอดขายไม่ได้: ${error.message}`);
+  }
+}
+
+function editSale(orderNo) {
+  const sale = sales.find((item) => item.order === orderNo);
+  if (!sale) return;
+
+  editingOrderNo.value = sale.order;
+  salesFormTitle.textContent = `แก้ไขยอดขาย ${sale.order}`;
+  saleProductSelect.value = sale.sku;
+  saleQty.value = sale.qty;
+  saleCustomer.value = sale.customer;
+  saleDate.value = sale.date;
+  setSalesStatus("กำลังแก้ไขรายการยอดขาย");
+  salesForm.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function deleteSale(orderNo) {
+  const sale = sales.find((item) => item.order === orderNo);
+  if (!sale || !window.confirm(`ลบยอดขาย ${orderNo} ใช่ไหม?`)) return;
+
+  try {
+    const result = await apiRequest(`/api/sales/${encodeURIComponent(orderNo)}`, {
+      method: "DELETE",
+    });
+
+    syncProducts(result.products);
+    syncSales(result.sales);
+    resetSaleForm();
+    render();
+    showView("sales");
+    setSalesStatus(`ลบยอดขาย ${orderNo} แล้ว`);
+  } catch (error) {
+    setSalesStatus(`ยังลบยอดขายไม่ได้: ${error.message}`);
+  }
+}
+
 searchInput.addEventListener("input", (event) => {
   state.query = event.target.value;
   renderProducts();
@@ -893,6 +1012,15 @@ categoryFilter.addEventListener("change", (event) => {
 simulateSaleBtn.addEventListener("click", addSampleSale);
 productForm.addEventListener("submit", addProduct);
 adjustStockBtn.addEventListener("click", adjustStock);
+salesForm.addEventListener("submit", saveSale);
+cancelSaleEditBtn.addEventListener("click", resetSaleForm);
+document.querySelector("#salesList").addEventListener("click", (event) => {
+  const editOrderNo = event.target.dataset.editSale;
+  const deleteOrderNo = event.target.dataset.deleteSale;
+
+  if (editOrderNo) editSale(editOrderNo);
+  if (deleteOrderNo) deleteSale(deleteOrderNo);
+});
 trackingShipmentSelect.addEventListener("change", renderTrackingControls);
 trackingStatusForm.addEventListener("submit", (event) => {
   event.preventDefault();

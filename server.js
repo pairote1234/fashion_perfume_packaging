@@ -130,7 +130,9 @@ async function getProducts() {
 async function getSales() {
   const rows = await query(`
     SELECT
+      so.id AS order_id,
       so.order_no AS \`order\`,
+      soi.id AS item_id,
       p.sku,
       soi.quantity AS qty,
       COALESCE(c.name, 'Walk-in') AS customer,
@@ -147,6 +149,8 @@ async function getSales() {
 
   return rows.map((row) => ({
     ...row,
+    orderId: Number(row.order_id),
+    itemId: Number(row.item_id),
     qty: Number(row.qty),
     date: toDateText(row.date),
   }));
@@ -411,6 +415,156 @@ app.post("/api/sales/sample", asyncRoute(async (request, response) => {
       `,
       [qty, orderResult.insertId, sku]
     );
+  });
+
+  response.json({ ok: true, products: await getProducts(), sales: await getSales() });
+}));
+
+app.post("/api/sales", asyncRoute(async (request, response) => {
+  const { sku } = request.body;
+  const qty = Math.max(1, Number(request.body.qty || 1));
+  const customer = request.body.customer || "Walk-in";
+  const date = request.body.date || new Date().toISOString().slice(0, 10);
+
+  await transaction(async (connection) => {
+    await connection.execute(
+      `
+        INSERT INTO customers (name, customer_type)
+        VALUES (?, 'online')
+        ON DUPLICATE KEY UPDATE name = VALUES(name)
+      `,
+      [customer]
+    );
+
+    const [products] = await connection.execute(
+      "SELECT id, selling_price, cost_price, stock_quantity FROM products WHERE sku = ? AND status = 'active'",
+      [sku]
+    );
+
+    if (!products.length) throw new Error("Product not found");
+
+    const product = products[0];
+    if (Number(product.stock_quantity) < qty) throw new Error("Not enough stock for this sale");
+
+    const [customers] = await connection.execute("SELECT id FROM customers WHERE name = ?", [customer]);
+    const total = qty * Number(product.selling_price);
+    const [orderResult] = await connection.execute(
+      `
+        INSERT INTO sales_orders (order_no, customer_id, order_date, total_amount)
+        VALUES (CONCAT('SO-WEB-', DATE_FORMAT(NOW(6), '%Y%m%d%H%i%s%f')), ?, ?, ?)
+      `,
+      [customers[0].id, date, total]
+    );
+
+    await connection.execute(
+      `
+        INSERT INTO sales_order_items (sales_order_id, product_id, quantity, unit_price, unit_cost)
+        VALUES (?, ?, ?, ?, ?)
+      `,
+      [orderResult.insertId, product.id, qty, product.selling_price, product.cost_price]
+    );
+
+    await connection.execute("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?", [
+      qty,
+      product.id,
+    ]);
+  });
+
+  response.json({ ok: true, products: await getProducts(), sales: await getSales() });
+}));
+
+app.put("/api/sales/:orderNo", asyncRoute(async (request, response) => {
+  const { sku } = request.body;
+  const qty = Math.max(1, Number(request.body.qty || 1));
+  const customer = request.body.customer || "Walk-in";
+  const date = request.body.date || new Date().toISOString().slice(0, 10);
+
+  await transaction(async (connection) => {
+    const [existingRows] = await connection.execute(
+      `
+        SELECT so.id AS order_id, soi.id AS item_id, soi.product_id AS old_product_id, soi.quantity AS old_qty
+        FROM sales_orders so
+        JOIN sales_order_items soi ON soi.sales_order_id = so.id
+        WHERE so.order_no = ?
+          AND so.status <> 'cancelled'
+        LIMIT 1
+      `,
+      [request.params.orderNo]
+    );
+
+    if (!existingRows.length) throw new Error("Sale not found");
+
+    const existing = existingRows[0];
+    await connection.execute("UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?", [
+      existing.old_qty,
+      existing.old_product_id,
+    ]);
+
+    await connection.execute(
+      `
+        INSERT INTO customers (name, customer_type)
+        VALUES (?, 'online')
+        ON DUPLICATE KEY UPDATE name = VALUES(name)
+      `,
+      [customer]
+    );
+
+    const [customers] = await connection.execute("SELECT id FROM customers WHERE name = ?", [customer]);
+    const [products] = await connection.execute(
+      "SELECT id, selling_price, cost_price, stock_quantity FROM products WHERE sku = ? AND status = 'active'",
+      [sku]
+    );
+
+    if (!products.length) throw new Error("Product not found");
+
+    const product = products[0];
+    if (Number(product.stock_quantity) < qty) throw new Error("Not enough stock for this sale");
+
+    const total = qty * Number(product.selling_price);
+    await connection.execute(
+      "UPDATE sales_orders SET customer_id = ?, order_date = ?, total_amount = ? WHERE id = ?",
+      [customers[0].id, date, total, existing.order_id]
+    );
+    await connection.execute(
+      `
+        UPDATE sales_order_items
+        SET product_id = ?, quantity = ?, unit_price = ?, unit_cost = ?
+        WHERE id = ?
+      `,
+      [product.id, qty, product.selling_price, product.cost_price, existing.item_id]
+    );
+    await connection.execute("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?", [
+      qty,
+      product.id,
+    ]);
+  });
+
+  response.json({ ok: true, products: await getProducts(), sales: await getSales() });
+}));
+
+app.delete("/api/sales/:orderNo", asyncRoute(async (request, response) => {
+  await transaction(async (connection) => {
+    const [rows] = await connection.execute(
+      `
+        SELECT so.id AS order_id, soi.product_id, soi.quantity
+        FROM sales_orders so
+        JOIN sales_order_items soi ON soi.sales_order_id = so.id
+        WHERE so.order_no = ?
+          AND so.status <> 'cancelled'
+      `,
+      [request.params.orderNo]
+    );
+
+    for (const row of rows) {
+      await connection.execute("UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?", [
+        row.quantity,
+        row.product_id,
+      ]);
+    }
+
+    if (rows.length) {
+      await connection.execute("UPDATE sales_orders SET status = 'cancelled' WHERE id = ?", [rows[0].order_id]);
+    }
   });
 
   response.json({ ok: true, products: await getProducts(), sales: await getSales() });

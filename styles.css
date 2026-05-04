@@ -344,11 +344,34 @@ th {
 
 .sale-item {
   align-items: flex-start;
+  flex-direction: column;
 }
 
 .sale-amount {
   color: var(--green);
   font-weight: 800;
+}
+
+.sale-actions,
+.sales-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.sale-actions {
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.sales-manager-card {
+  margin-bottom: 18px;
+}
+
+.sales-form-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 0.7fr 1fr 0.8fr;
+  gap: 12px;
 }
 
 .manager-grid {
@@ -612,6 +635,7 @@ th {
   .shipment-list,
   .tracking-manager,
   .shipment-form-grid,
+  .sales-form-grid,
   .manager-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -683,6 +707,7 @@ th {
   .tracking-manager,
   .shipment-form-grid,
   .manager-grid,
+  .sales-form-grid,
   .form-row {
     width: 100%;
     grid-template-columns: 1fr;

@@ -321,6 +321,33 @@
           </div>
           <span id="lastUpdated" class="updated-at"></span>
         </div>
+        <form id="salesForm" class="manager-card sales-manager-card">
+          <h3 id="salesFormTitle">เพิ่มยอดขาย</h3>
+          <input id="editingOrderNo" type="hidden" />
+          <div class="sales-form-grid">
+            <label>
+              สินค้า
+              <select id="saleProductSelect" required></select>
+            </label>
+            <label>
+              จำนวนที่ขายได้
+              <input id="saleQty" type="number" min="1" step="1" value="1" required />
+            </label>
+            <label>
+              ลูกค้า
+              <input id="saleCustomer" type="text" value="Walk-in" required />
+            </label>
+            <label>
+              วันที่ขาย
+              <input id="saleDate" type="date" required />
+            </label>
+          </div>
+          <div class="sales-form-actions">
+            <button id="saveSaleBtn" type="submit">บันทึกยอดขาย</button>
+            <button id="cancelSaleEditBtn" class="secondary-button" type="button">ยกเลิกแก้ไข</button>
+          </div>
+          <span id="salesStatus" class="updated-at"></span>
+        </form>
         <div id="salesList" class="sales-list"></div>
       </section>
     </main>
