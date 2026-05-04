@@ -442,6 +442,26 @@ th {
   min-width: 0;
 }
 
+.empty-state {
+  grid-column: 1 / -1;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+  padding: 22px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty-state strong,
+.empty-state small {
+  display: block;
+}
+
+.empty-state strong {
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
 .shipment-head {
   display: flex;
   justify-content: space-between;

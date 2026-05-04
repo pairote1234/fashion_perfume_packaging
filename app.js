@@ -261,7 +261,9 @@ function renderMetrics() {
   document.querySelector("#totalUnits").textContent = totalUnits.toLocaleString("th-TH");
   document.querySelector("#lowStockCount").textContent = `${lowStock} รายการใกล้หมด`;
   document.querySelector("#incomingUnits").textContent = incomingUnits.toLocaleString("th-TH");
-  document.querySelector("#nearestEta").textContent = `ถึงไทยใกล้สุด ${formatDate(nearestShipment.eta)}`;
+  document.querySelector("#nearestEta").textContent = nearestShipment
+    ? `ถึงไทยใกล้สุด ${formatDate(nearestShipment.eta)}`
+    : "ETA -";
 }
 
 function renderProducts() {
@@ -362,6 +364,16 @@ function renderShipments() {
   const shipmentList = document.querySelector("#shipmentList");
   renderTrackingControls();
 
+  if (!shipments.length) {
+    shipmentList.innerHTML = `
+      <article class="empty-state">
+        <strong>ยังไม่มี Shipment</strong>
+        <small>เพิ่ม Shipment ใหม่จากฟอร์มด้านบนเพื่อเริ่ม Tracking</small>
+      </article>
+    `;
+    return;
+  }
+
   shipmentList.innerHTML = shipments
     .map((shipment) => {
       const progress = Math.round(((shipment.currentStage + 1) / shipment.stages.length) * 100);
@@ -428,8 +440,13 @@ function renderTrackingControls() {
   const shipment = selectedShipment();
   if (!shipment) {
     trackingStageSelect.innerHTML = "";
+    trackingShipmentSelect.disabled = true;
+    trackingStageSelect.disabled = true;
     return;
   }
+
+  trackingShipmentSelect.disabled = false;
+  trackingStageSelect.disabled = false;
 
   trackingStageSelect.innerHTML = shipment.stages
     .map((stage, index) => `<option value="${index}">${index + 1}. ${stage.label}</option>`)
