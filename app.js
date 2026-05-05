@@ -173,18 +173,16 @@ const apiBaseUrl = window.location.protocol.startsWith("http") ? "" : "http://lo
 const productTable = document.querySelector("#productTable");
 const categoryFilter = document.querySelector("#categoryFilter");
 const searchInput = document.querySelector("#searchInput");
-const simulateSaleBtn = document.querySelector("#simulateSaleBtn");
 const userBadge = document.createElement("span");
 userBadge.id = "userBadge";
 userBadge.className = "user-badge";
 userBadge.textContent = "User";
-simulateSaleBtn.textContent = "จัดการยอดขาย";
 const logoutBtn = document.createElement("button");
 logoutBtn.id = "logoutBtn";
 logoutBtn.className = "secondary-button";
 logoutBtn.type = "button";
 logoutBtn.textContent = "ออกจากระบบ";
-simulateSaleBtn.insertAdjacentElement("afterend", userBadge);
+searchInput.closest(".top-actions").append(userBadge);
 userBadge.insertAdjacentElement("afterend", logoutBtn);
 const productForm = document.querySelector("#productForm");
 const stockProductSelect = document.querySelector("#stockProductSelect");
@@ -912,51 +910,6 @@ async function addShipment(event) {
   }
 }
 
-async function addSampleSale() {
-  document.querySelectorAll(".nav a").forEach((navLink) => {
-    navLink.classList.toggle("active", navLink.getAttribute("href") === "#sales");
-  });
-  showView("sales");
-  document.querySelector("#sales")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  return;
-
-  const availableProducts = products.filter((product) => product.stock > 0);
-  const product = availableProducts[Math.floor(Math.random() * availableProducts.length)];
-  const qty = Math.min(product.stock, Math.floor(Math.random() * 6) + 1);
-  const nextOrder = `SO-${2049 + sales.length}`;
-
-  try {
-    const result = await apiRequest("/api/sales/sample", {
-      method: "POST",
-      body: JSON.stringify({
-        sku: product.sku,
-        qty,
-        customer: "Sample customer",
-      }),
-    });
-
-    syncProducts(result.products);
-    syncSales(result.sales);
-    setManageStatus(`เพิ่มยอดขาย ${product.sku} ลง database แล้ว`);
-    render();
-    return;
-  } catch (error) {
-    setManageStatus("เพิ่มยอดขายเฉพาะในหน้าเว็บ เพราะยังไม่ต่อ server");
-  }
-
-  product.stock -= qty;
-  product.sold += qty;
-  sales.unshift({
-    order: nextOrder,
-    sku: product.sku,
-    qty,
-    customer: "Sample customer",
-    date: new Date().toISOString().slice(0, 10),
-  });
-
-  render();
-}
-
 async function saveSale(event) {
   event.preventDefault();
 
@@ -1029,7 +982,6 @@ categoryFilter.addEventListener("change", (event) => {
   renderProducts();
 });
 
-simulateSaleBtn.addEventListener("click", addSampleSale);
 logoutBtn.addEventListener("click", async () => {
   await fetch("/api/logout", { method: "POST" });
   window.location.href = "/login";
