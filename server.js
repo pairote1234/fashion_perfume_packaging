@@ -132,6 +132,13 @@ app.post("/api/logout", (_request, response) => {
 });
 
 app.use(requireAuth);
+
+app.get("/api/session", (request, response) => {
+  const token = parseCookies(request.headers.cookie)[authCookieName];
+  const [username] = token.split(":");
+  response.json({ username });
+});
+
 app.use(express.static(root));
 
 const databaseUrl = process.env.MYSQL_PUBLIC_URL || process.env.DATABASE_URL || process.env.MYSQL_URL;

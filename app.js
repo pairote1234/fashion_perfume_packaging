@@ -174,13 +174,18 @@ const productTable = document.querySelector("#productTable");
 const categoryFilter = document.querySelector("#categoryFilter");
 const searchInput = document.querySelector("#searchInput");
 const simulateSaleBtn = document.querySelector("#simulateSaleBtn");
+const userBadge = document.createElement("span");
+userBadge.id = "userBadge";
+userBadge.className = "user-badge";
+userBadge.textContent = "User";
 simulateSaleBtn.textContent = "จัดการยอดขาย";
 const logoutBtn = document.createElement("button");
 logoutBtn.id = "logoutBtn";
 logoutBtn.className = "secondary-button";
 logoutBtn.type = "button";
 logoutBtn.textContent = "ออกจากระบบ";
-simulateSaleBtn.insertAdjacentElement("afterend", logoutBtn);
+simulateSaleBtn.insertAdjacentElement("afterend", userBadge);
+userBadge.insertAdjacentElement("afterend", logoutBtn);
 const productForm = document.querySelector("#productForm");
 const stockProductSelect = document.querySelector("#stockProductSelect");
 const adjustStockBtn = document.querySelector("#adjustStockBtn");
@@ -567,6 +572,15 @@ async function loadDashboardFromDatabase() {
     setManageStatus("โหลดข้อมูลจาก database แล้ว");
   } catch (error) {
     setManageStatus("ยังไม่ได้เชื่อมต่อ database: เปิดผ่าน Start SupplyPilot Web.bat");
+  }
+}
+
+async function loadSessionUser() {
+  try {
+    const session = await apiRequest("/api/session");
+    userBadge.textContent = `User: ${session.username}`;
+  } catch (error) {
+    userBadge.textContent = "User";
   }
 }
 
@@ -1078,3 +1092,4 @@ hydrateCategoryFilter();
 render();
 showView("overview");
 loadDashboardFromDatabase();
+loadSessionUser();
