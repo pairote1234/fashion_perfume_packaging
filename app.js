@@ -175,6 +175,12 @@ const categoryFilter = document.querySelector("#categoryFilter");
 const searchInput = document.querySelector("#searchInput");
 const simulateSaleBtn = document.querySelector("#simulateSaleBtn");
 simulateSaleBtn.textContent = "จัดการยอดขาย";
+const logoutBtn = document.createElement("button");
+logoutBtn.id = "logoutBtn";
+logoutBtn.className = "secondary-button";
+logoutBtn.type = "button";
+logoutBtn.textContent = "ออกจากระบบ";
+simulateSaleBtn.insertAdjacentElement("afterend", logoutBtn);
 const productForm = document.querySelector("#productForm");
 const stockProductSelect = document.querySelector("#stockProductSelect");
 const adjustStockBtn = document.querySelector("#adjustStockBtn");
@@ -1010,6 +1016,10 @@ categoryFilter.addEventListener("change", (event) => {
 });
 
 simulateSaleBtn.addEventListener("click", addSampleSale);
+logoutBtn.addEventListener("click", async () => {
+  await fetch("/api/logout", { method: "POST" });
+  window.location.href = "/login";
+});
 productForm.addEventListener("submit", addProduct);
 adjustStockBtn.addEventListener("click", adjustStock);
 salesForm.addEventListener("submit", saveSale);

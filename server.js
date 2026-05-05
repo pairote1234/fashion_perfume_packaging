@@ -2,6 +2,7 @@ const express = require("express");
 const mysql = require("mysql2/promise");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -28,8 +29,109 @@ loadEnvFile(path.join(__dirname, ".env"));
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const root = __dirname;
+const loginUser = process.env.APP_USERNAME || "kapi";
+const loginPassword = process.env.APP_PASSWORD || "?kapi@2026";
+const authSecret = process.env.AUTH_SECRET || "supplypilot-local-auth-secret";
+const authCookieName = "supplypilot_auth";
 
 app.use(express.json());
+
+function parseCookies(cookieHeader = "") {
+  return Object.fromEntries(
+    cookieHeader
+      .split(";")
+      .map((cookie) => cookie.trim())
+      .filter(Boolean)
+      .map((cookie) => {
+        const equalsAt = cookie.indexOf("=");
+        if (equalsAt === -1) return [cookie, ""];
+        return [cookie.slice(0, equalsAt), decodeURIComponent(cookie.slice(equalsAt + 1))];
+      })
+  );
+}
+
+function signAuthToken(username, expiresAt) {
+  return crypto.createHmac("sha256", authSecret).update(`${username}:${expiresAt}`).digest("hex");
+}
+
+function createAuthToken(username) {
+  const expiresAt = Date.now() + 12 * 60 * 60 * 1000;
+  const signature = signAuthToken(username, expiresAt);
+  return `${username}:${expiresAt}:${signature}`;
+}
+
+function isValidAuthToken(token) {
+  if (!token) return false;
+  const [username, expiresAtText, signature] = token.split(":");
+  const expiresAt = Number(expiresAtText);
+
+  if (username !== loginUser || !expiresAt || Date.now() > expiresAt || !signature) return false;
+
+  const expected = signAuthToken(username, expiresAt);
+  if (signature.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+}
+
+function setAuthCookie(response, token) {
+  response.cookie(authCookieName, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 12 * 60 * 60 * 1000,
+  });
+}
+
+function clearAuthCookie(response) {
+  response.clearCookie(authCookieName, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+  });
+}
+
+function requireAuth(request, response, next) {
+  const token = parseCookies(request.headers.cookie)[authCookieName];
+  if (isValidAuthToken(token)) {
+    next();
+    return;
+  }
+
+  if (request.path.startsWith("/api/")) {
+    response.status(401).json({ error: "Authentication required" });
+    return;
+  }
+
+  response.redirect("/login");
+}
+
+app.get("/login", (request, response) => {
+  const token = parseCookies(request.headers.cookie)[authCookieName];
+  if (isValidAuthToken(token)) {
+    response.redirect("/");
+    return;
+  }
+
+  response.sendFile(path.join(root, "login.html"));
+});
+
+app.post("/api/login", (request, response) => {
+  const { username, password } = request.body || {};
+
+  if (username === loginUser && password === loginPassword) {
+    setAuthCookie(response, createAuthToken(username));
+    response.json({ ok: true });
+    return;
+  }
+
+  response.status(401).json({ error: "Invalid username or password" });
+});
+
+app.post("/api/logout", (_request, response) => {
+  clearAuthCookie(response);
+  response.json({ ok: true });
+});
+
+app.use(requireAuth);
 app.use(express.static(root));
 
 const databaseUrl = process.env.MYSQL_PUBLIC_URL || process.env.DATABASE_URL || process.env.MYSQL_URL;

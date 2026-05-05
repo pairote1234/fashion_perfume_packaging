@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Login | SupplyPilot</title>
+    <style>
+      :root {
+        --bg: #f4f6f5;
+        --surface: #ffffff;
+        --ink: #202521;
+        --muted: #66736d;
+        --line: #dbe2dd;
+        --green: #247a52;
+        --red: #b43f3f;
+        --shadow: 0 16px 40px rgba(32, 37, 33, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: "Segoe UI", Tahoma, sans-serif;
+      }
+
+      main {
+        width: min(420px, 100%);
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: var(--shadow);
+        padding: 24px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 24px;
+      }
+
+      .brand-mark {
+        width: 42px;
+        height: 42px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        background: #e9b44c;
+        color: #202521;
+        font-weight: 800;
+      }
+
+      h1,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 24px;
+      }
+
+      p {
+        color: var(--muted);
+        margin-top: 4px;
+      }
+
+      form {
+        display: grid;
+        gap: 14px;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      input,
+      button {
+        width: 100%;
+        min-height: 44px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font: inherit;
+      }
+
+      input {
+        padding: 0 12px;
+        color: var(--ink);
+      }
+
+      button {
+        margin-top: 4px;
+        background: var(--green);
+        border-color: var(--green);
+        color: #fff;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .error {
+        min-height: 20px;
+        color: var(--red);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand">
+        <span class="brand-mark">SP</span>
+        <div>
+          <h1>SupplyPilot</h1>
+          <p>เข้าสู่ระบบก่อนใช้งาน</p>
+        </div>
+      </div>
+
+      <form id="loginForm">
+        <label>
+          Username
+          <input id="username" name="username" type="text" autocomplete="username" required autofocus />
+        </label>
+        <label>
+          Password
+          <input id="password" name="password" type="password" autocomplete="current-password" required />
+        </label>
+        <button type="submit">Login</button>
+        <div id="error" class="error"></div>
+      </form>
+    </main>
+
+    <script>
+      const form = document.querySelector("#loginForm");
+      const error = document.querySelector("#error");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        error.textContent = "";
+
+        const response = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: document.querySelector("#username").value,
+            password: document.querySelector("#password").value,
+          }),
+        });
+
+        if (response.ok) {
+          window.location.href = "/";
+          return;
+        }
+
+        error.textContent = "Username หรือ Password ไม่ถูกต้อง";
+      });
+    </script>
+  </body>
+</html>
