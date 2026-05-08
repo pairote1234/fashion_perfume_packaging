@@ -158,6 +158,10 @@ const shipments = [
   },
 ];
 
+let profitSummary = { revenue: 0, cost: 0, profit: 0, margin: 0, products: [] };
+let stockMovements = [];
+let customers = [];
+
 const formatter = new Intl.NumberFormat("th-TH", {
   style: "currency",
   currency: "THB",
@@ -217,11 +221,18 @@ const salesForm = document.querySelector("#salesForm");
 const saleProductSelect = document.querySelector("#saleProductSelect");
 const saleQty = document.querySelector("#saleQty");
 const saleCustomer = document.querySelector("#saleCustomer");
+const saleCustomerPhone = document.querySelector("#saleCustomerPhone");
 const saleDate = document.querySelector("#saleDate");
+const saleStatus = document.querySelector("#saleStatus");
 const editingOrderNo = document.querySelector("#editingOrderNo");
 const salesFormTitle = document.querySelector("#salesFormTitle");
 const salesStatus = document.querySelector("#salesStatus");
 const cancelSaleEditBtn = document.querySelector("#cancelSaleEditBtn");
+const profitProductList = document.querySelector("#profitProductList");
+const stockMovementList = document.querySelector("#stockMovementList");
+const customerForm = document.querySelector("#customerForm");
+const customerList = document.querySelector("#customerList");
+const customerStatus = document.querySelector("#customerStatus");
 const viewBlocks = {
   overview: document.querySelector("#overview"),
   content: document.querySelector(".content-grid"),
@@ -230,6 +241,8 @@ const viewBlocks = {
   manage: document.querySelector("#manage"),
   imports: document.querySelector("#imports"),
   sales: document.querySelector("#sales"),
+  customers: document.querySelector("#customers"),
+  operations: document.querySelector("#operations"),
   sideStack: document.querySelector(".side-stack"),
 };
 const galleryState = {
@@ -240,6 +253,33 @@ const galleryState = {
 
 function money(value) {
   return formatter.format(value);
+}
+
+function percent(value) {
+  return `${Number(value || 0).toLocaleString("th-TH", {
+    maximumFractionDigits: 1,
+  })}%`;
+}
+
+function saleStatusLabel(value) {
+  return {
+    pending: "รอชำระเงิน",
+    paid: "ชำระแล้ว",
+    shipped: "ส่งแล้ว",
+    cancelled: "ยกเลิก",
+  }[value] || "ชำระแล้ว";
+}
+
+function movementLabel(value) {
+  return {
+    opening: "ยอดเริ่มต้น",
+    purchase_in: "รับเข้า",
+    sale_out: "ขายออก",
+    adjust_in: "ปรับเพิ่ม",
+    adjust_out: "ปรับลด",
+    set_balance: "ตั้งยอดใหม่",
+    delete_adjustment: "ลบรายการ",
+  }[value] || value;
 }
 
 function productBySku(sku) {
@@ -360,11 +400,13 @@ function hydrateCategoryFilter() {
 }
 
 function renderMetrics() {
-  const revenue = sales.reduce((sum, sale) => {
+  const revenue = profitSummary.revenue || sales.reduce((sum, sale) => {
     const product = productBySku(sale.sku);
     if (!product) return sum;
     return sum + product.price * sale.qty;
   }, 0);
+  const saleCost = profitSummary.cost || sales.reduce((sum, sale) => sum + Number(sale.cost || 0), 0);
+  const grossProfit = profitSummary.profit || revenue - saleCost;
   const stockValue = products.reduce((sum, product) => sum + product.price * product.stock, 0);
   const totalUnits = products.reduce((sum, product) => sum + product.stock, 0);
   const lowStock = products.filter((product) => product.stock <= product.reorderPoint).length;
@@ -373,9 +415,11 @@ function renderMetrics() {
 
   document.querySelector("#monthlyRevenue").textContent = money(revenue);
   document.querySelector("#monthlyOrders").textContent = `${sales.length.toLocaleString("th-TH")} รายการขาย`;
+  document.querySelector("#salesCost").textContent = money(saleCost);
+  document.querySelector("#profitValue").textContent = money(grossProfit);
+  document.querySelector("#profitMargin").textContent = `Margin ${percent(profitSummary.margin || (revenue > 0 ? (grossProfit / revenue) * 100 : 0))}`;
   document.querySelector("#stockValue").textContent = money(stockValue);
-  document.querySelector("#totalUnits").textContent = totalUnits.toLocaleString("th-TH");
-  document.querySelector("#lowStockCount").textContent = `${products.length.toLocaleString("th-TH")} SKU ทั้งหมด · ${lowStock.toLocaleString("th-TH")} รายการใกล้หมด`;
+  document.querySelector("#stockSummary").textContent = `${totalUnits.toLocaleString("th-TH")} ชิ้น · ${lowStock.toLocaleString("th-TH")} รายการใกล้หมด`;
   document.querySelector("#incomingUnits").textContent = incomingUnits.toLocaleString("th-TH");
   document.querySelector("#nearestEta").textContent = nearestShipment
     ? `ถึงไทยใกล้สุด ${formatDate(nearestShipment.eta)}`
@@ -387,6 +431,7 @@ function renderProducts() {
 
   filteredProducts().forEach((product) => {
     const status = stockStatus(product);
+    const actualCost = product.landedCost ?? product.cost;
     const row = document.createElement("tr");
 
     row.innerHTML = `
@@ -396,8 +441,8 @@ function renderProducts() {
       <td>${product.category}</td>
       <td>${product.supplier}</td>
       <td class="number-cell">${money(product.price)}</td>
-      <td class="number-cell">${money(product.cost)}</td>
-      <td class="number-cell">${money(product.cost * product.stock)}</td>
+      <td class="number-cell">${money(actualCost)}</td>
+      <td class="number-cell">${money(actualCost * product.stock)}</td>
       <td class="number-cell">${product.sold.toLocaleString("th-TH")}</td>
       <td class="number-cell">${product.stock.toLocaleString("th-TH")}</td>
       <td><span class="status ${status.className}">${status.label}</span></td>
@@ -422,8 +467,9 @@ function renderManager() {
   renderImagePreview();
 
   manageTable.innerHTML = products
-    .map(
-      (product) => `
+    .map((product) => {
+      const actualCost = product.landedCost ?? product.cost;
+      return `
         <tr>
           <td>
             ${productIdentityMarkup(product)}
@@ -431,16 +477,16 @@ function renderManager() {
           <td>${product.category}</td>
           <td>${product.supplier}</td>
           <td class="number-cell">${money(product.price)}</td>
-          <td class="number-cell">${money(product.cost)}</td>
-          <td class="number-cell">${money(product.cost * product.stock)}</td>
+          <td class="number-cell">${money(actualCost)}</td>
+          <td class="number-cell">${money(actualCost * product.stock)}</td>
           <td class="number-cell">${product.stock.toLocaleString("th-TH")}</td>
           <td class="number-cell">${product.reorderPoint.toLocaleString("th-TH")}</td>
           <td>
             <button class="danger-button" type="button" data-delete-sku="${product.sku}">ลบ</button>
           </td>
         </tr>
-      `
-    )
+      `;
+    })
     .join("");
 }
 
@@ -488,6 +534,79 @@ function renderTopSellers() {
       `
     )
     .join("");
+}
+
+function renderProfitReport() {
+  if (!profitProductList) return;
+
+  const rows = profitSummary.products || [];
+  profitProductList.innerHTML = rows.length
+    ? rows
+        .map(
+          (product) => `
+            <article class="report-item">
+              <div>
+                <strong>${product.name}</strong>
+                <small>${product.sku} · ขาย ${product.units.toLocaleString("th-TH")} ชิ้น · Margin ${percent(product.margin)}</small>
+              </div>
+              <div class="report-numbers">
+                <span>${money(product.revenue)}</span>
+                <strong>${money(product.profit)}</strong>
+              </div>
+            </article>
+          `
+        )
+        .join("")
+    : '<div class="empty-state">ยังไม่มีข้อมูลกำไรต่อสินค้า</div>';
+}
+
+function renderStockMovements() {
+  if (!stockMovementList) return;
+
+  stockMovementList.innerHTML = stockMovements.length
+    ? stockMovements
+        .slice(0, 20)
+        .map(
+          (movement) => `
+            <article class="report-item">
+              <div>
+                <strong>${movement.productName}</strong>
+                <small>${movement.sku} · ${movementLabel(movement.type)} · โดย ${movement.user}</small>
+                <small>${movement.note || "-"} · ${new Date(movement.createdAt).toLocaleString("th-TH")}</small>
+              </div>
+              <div class="report-numbers">
+                <span>${movement.qty.toLocaleString("th-TH")} ชิ้น</span>
+                <strong>คงเหลือ ${movement.balanceAfter.toLocaleString("th-TH")}</strong>
+              </div>
+            </article>
+          `
+        )
+        .join("")
+    : '<div class="empty-state">ยังไม่มีประวัติ Stock Movement</div>';
+}
+
+function renderCustomers() {
+  if (!customerList) return;
+
+  customerList.innerHTML = customers.length
+    ? customers
+        .map(
+          (customer) => `
+            <article class="report-item">
+              <div>
+                <strong>${customer.name}</strong>
+                <small>${customer.phone || "ไม่มีเบอร์"} · ${customer.type}</small>
+                <small>${customer.orderCount.toLocaleString("th-TH")} รายการ · ล่าสุด ${customer.lastOrderDate || "-"}</small>
+              </div>
+              <div class="report-numbers">
+                <span>ยอดซื้อรวม</span>
+                <strong>${money(customer.totalSpent)}</strong>
+              </div>
+            </article>
+          `
+        )
+        .join("")
+    : '<div class="empty-state">ยังไม่มีข้อมูลลูกค้า</div>';
 }
 
 function renderShipments() {
@@ -609,9 +728,10 @@ function renderSales() {
           <div>
             <strong>${sale.order}</strong>
             <small>${product.name}</small>
-            <small>${sale.customer} | ${sale.date} | ${sale.qty.toLocaleString("th-TH")} ชิ้น</small>
+            <small>${sale.customer} ${sale.customerPhone ? `· ${sale.customerPhone}` : ""} | ${sale.date} | ${sale.qty.toLocaleString("th-TH")} ชิ้น</small>
           </div>
-          <span class="sale-amount">${money(product.price * sale.qty)}</span>
+          <span class="status ${sale.status === "cancelled" ? "danger" : sale.status === "pending" ? "warning" : "good"}">${saleStatusLabel(sale.status)}</span>
+          <span class="sale-amount">${money(sale.total || product.price * sale.qty)}</span>
           <div class="sale-actions">
             <button class="secondary-button" type="button" data-edit-sale="${sale.order}">แก้ไข</button>
             <button class="danger-button" type="button" data-delete-sale="${sale.order}">ลบ</button>
@@ -630,6 +750,9 @@ function render() {
   renderManager();
   renderAlerts();
   renderTopSellers();
+  renderProfitReport();
+  renderStockMovements();
+  renderCustomers();
   renderShipments();
   renderSales();
 }
@@ -665,17 +788,48 @@ function syncShipments(nextShipments) {
   shipments.splice(0, shipments.length, ...nextShipments);
 }
 
+function syncProfitSummary(nextSummary) {
+  profitSummary = nextSummary || { revenue: 0, cost: 0, profit: 0, margin: 0, products: [] };
+}
+
+function syncStockMovements(nextMovements) {
+  stockMovements.splice(0, stockMovements.length, ...(nextMovements || []));
+}
+
+function syncCustomers(nextCustomers) {
+  customers.splice(0, customers.length, ...(nextCustomers || []));
+}
+
+async function refreshBusinessData() {
+  const [databaseProfit, databaseMovements, databaseCustomers] = await Promise.all([
+    apiRequest("/api/profit-summary"),
+    apiRequest("/api/stock-movements"),
+    apiRequest("/api/customers"),
+  ]);
+
+  syncProfitSummary(databaseProfit);
+  syncStockMovements(databaseMovements);
+  syncCustomers(databaseCustomers);
+  render();
+}
+
 async function loadDashboardFromDatabase() {
   try {
-    const [databaseProducts, databaseSales, databaseShipments] = await Promise.all([
+    const [databaseProducts, databaseSales, databaseShipments, databaseProfit, databaseMovements, databaseCustomers] = await Promise.all([
       apiRequest("/api/products"),
       apiRequest("/api/sales"),
       apiRequest("/api/shipments"),
+      apiRequest("/api/profit-summary"),
+      apiRequest("/api/stock-movements"),
+      apiRequest("/api/customers"),
     ]);
 
     syncProducts(databaseProducts);
     syncSales(databaseSales);
     syncShipments(databaseShipments);
+    syncProfitSummary(databaseProfit);
+    syncStockMovements(databaseMovements);
+    syncCustomers(databaseCustomers);
     hydrateCategoryFilter();
     render();
     setManageStatus("โหลดข้อมูลจาก database แล้ว");
@@ -711,6 +865,8 @@ function showView(viewName) {
   setVisible(viewBlocks.manage, isOverview || view === "manage");
   setVisible(viewBlocks.imports, isOverview || view === "imports");
   setVisible(viewBlocks.sales, isOverview || view === "sales");
+  setVisible(viewBlocks.customers, isOverview || view === "customers");
+  setVisible(viewBlocks.operations, isOverview || view === "operations");
 
   if (viewBlocks.products) {
     viewBlocks.products.style.gridColumn = view === "products" ? "1 / -1" : "";
@@ -762,7 +918,9 @@ function resetSaleForm() {
   salesFormTitle.textContent = "เพิ่มยอดขาย";
   saleQty.value = "1";
   saleCustomer.value = "Walk-in";
+  saleCustomerPhone.value = "";
   saleDate.value = new Date().toISOString().slice(0, 10);
+  saleStatus.value = "paid";
   renderSalesControls();
 }
 
@@ -787,6 +945,9 @@ async function addProduct(event) {
     supplier: document.querySelector("#newSupplier").value.trim(),
     price: numberFromInput("#newPrice"),
     cost: numberFromInput("#newCost"),
+    shippingCost: numberFromInput("#newShippingCost"),
+    taxCost: numberFromInput("#newTaxCost"),
+    otherCost: numberFromInput("#newOtherCost"),
     stock: numberFromInput("#newStock"),
     reorderPoint: numberFromInput("#newReorder"),
   };
@@ -814,6 +975,7 @@ async function addProduct(event) {
       ...payload,
       imageUrl: payload.imageUrls?.[0] || null,
       images: (payload.imageUrls || []).map((url, index) => ({ id: `local-new-${index}`, url, isPrimary: index === 0 })),
+      landedCost: payload.cost + payload.shippingCost + payload.taxCost + payload.otherCost,
       sold: 0,
     });
     productForm.reset();
@@ -1020,17 +1182,19 @@ async function adjustStock() {
   const product = productBySku(sku);
   const qty = Math.max(0, Number(document.querySelector("#stockQty").value || 0));
   const action = document.querySelector("#stockAction").value;
+  const reason = document.querySelector("#stockReason")?.value.trim() || "ปรับ stock จากหน้าเว็บ";
 
   if (!product) return;
 
   try {
     const result = await apiRequest("/api/stock", {
       method: "POST",
-      body: JSON.stringify({ sku, qty, action }),
+      body: JSON.stringify({ sku, qty, action, reason }),
     });
 
     syncProducts(result.products);
     stockProductSelect.value = sku;
+    await refreshBusinessData();
     setManageStatus(`อัปเดต stock ของ ${product.name} ใน database แล้ว`);
   } catch (error) {
     if (action === "add") {
@@ -1234,7 +1398,9 @@ async function saveSale(event) {
     sku: saleProductSelect.value,
     qty: Number(saleQty.value || 1),
     customer: saleCustomer.value.trim() || "Walk-in",
+    customerPhone: saleCustomerPhone.value.trim(),
     date: saleDate.value || new Date().toISOString().slice(0, 10),
+    status: saleStatus.value || "paid",
   };
   const orderNo = editingOrderNo.value;
 
@@ -1247,7 +1413,7 @@ async function saveSale(event) {
     syncProducts(result.products);
     syncSales(result.sales);
     resetSaleForm();
-    render();
+    await refreshBusinessData();
     showView("sales");
     setSalesStatus(orderNo ? `แก้ไขยอดขาย ${orderNo} แล้ว` : "บันทึกยอดขายแล้ว");
   } catch (error) {
@@ -1264,9 +1430,38 @@ function editSale(orderNo) {
   saleProductSelect.value = sale.sku;
   saleQty.value = sale.qty;
   saleCustomer.value = sale.customer;
+  saleCustomerPhone.value = sale.customerPhone || "";
   saleDate.value = sale.date;
+  saleStatus.value = sale.status || "paid";
   setSalesStatus("กำลังแก้ไขรายการยอดขาย");
   salesForm.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function saveCustomer(event) {
+  event.preventDefault();
+
+  const payload = {
+    name: document.querySelector("#customerName").value.trim(),
+    phone: document.querySelector("#customerPhone").value.trim(),
+    email: document.querySelector("#customerEmail").value.trim(),
+    type: document.querySelector("#customerType").value,
+  };
+
+  if (!payload.name) return;
+
+  try {
+    const result = await apiRequest("/api/customers", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    syncCustomers(result.customers);
+    customerForm.reset();
+    renderCustomers();
+    customerStatus.textContent = `บันทึกลูกค้า ${payload.name} แล้ว`;
+  } catch (error) {
+    customerStatus.textContent = `ยังบันทึกลูกค้าไม่ได้: ${error.message}`;
+  }
 }
 
 async function deleteSale(orderNo) {
@@ -1281,7 +1476,7 @@ async function deleteSale(orderNo) {
     syncProducts(result.products);
     syncSales(result.sales);
     resetSaleForm();
-    render();
+    await refreshBusinessData();
     showView("sales");
     setSalesStatus(`ลบยอดขาย ${orderNo} แล้ว`);
   } catch (error) {
@@ -1353,6 +1548,9 @@ document.addEventListener("keydown", (event) => {
 });
 salesForm.addEventListener("submit", saveSale);
 cancelSaleEditBtn.addEventListener("click", resetSaleForm);
+if (customerForm) {
+  customerForm.addEventListener("submit", saveCustomer);
+}
 document.querySelector("#salesList").addEventListener("click", (event) => {
   const editOrderNo = event.target.dataset.editSale;
   const deleteOrderNo = event.target.dataset.deleteSale;

@@ -102,6 +102,33 @@ async function ensureProductImagesTable(connection) {
   `);
 }
 
+async function columnExists(connection, tableName, columnName) {
+  const [columns] = await connection.query(`SHOW COLUMNS FROM \`${tableName}\` LIKE ?`, [columnName]);
+  return columns.length > 0;
+}
+
+async function ensureColumn(connection, tableName, columnName, ddl) {
+  if (await columnExists(connection, tableName, columnName)) return;
+  await connection.query(`ALTER TABLE \`${tableName}\` ADD COLUMN ${ddl}`);
+}
+
+async function ensureBusinessColumns(connection) {
+  await ensureColumn(connection, "products", "shipping_cost", "shipping_cost DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER cost_price");
+  await ensureColumn(connection, "products", "tax_cost", "tax_cost DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER shipping_cost");
+  await ensureColumn(connection, "products", "other_cost", "other_cost DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER tax_cost");
+  await ensureColumn(connection, "inventory_movements", "created_by", "created_by VARCHAR(80) NULL AFTER note");
+
+  await connection.query(`
+    ALTER TABLE sales_orders
+    MODIFY status ENUM('draft','pending','paid','shipped','cancelled') NOT NULL DEFAULT 'paid'
+  `);
+  await connection.query("UPDATE sales_orders SET status = 'pending' WHERE status = 'draft'");
+  await connection.query(`
+    ALTER TABLE sales_orders
+    MODIFY status ENUM('pending','paid','shipped','cancelled') NOT NULL DEFAULT 'paid'
+  `);
+}
+
 async function main() {
   const connection = await mysql.createConnection(config());
 
@@ -115,6 +142,7 @@ async function main() {
     await connection.query(ddlSql);
     await ensureProductImageColumn(connection);
     await ensureProductImagesTable(connection);
+    await ensureBusinessColumns(connection);
 
     const alreadySeeded = await tableHasRows(connection, "products");
     if (!alreadySeeded && seedSql.trim()) {

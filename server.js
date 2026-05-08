@@ -33,6 +33,7 @@ const loginUser = process.env.APP_USERNAME || "kapi";
 const loginPassword = process.env.APP_PASSWORD || "?kapi@2026";
 const authSecret = process.env.AUTH_SECRET || "supplypilot-local-auth-secret";
 const authCookieName = "supplypilot_auth";
+const allowedSaleStatuses = new Set(["pending", "paid", "shipped", "cancelled"]);
 
 app.use(express.json({ limit: "18mb" }));
 
@@ -92,6 +93,7 @@ function clearAuthCookie(response) {
 function requireAuth(request, response, next) {
   const token = parseCookies(request.headers.cookie)[authCookieName];
   if (isValidAuthToken(token)) {
+    request.authUser = token.split(":")[0];
     next();
     return;
   }
@@ -215,6 +217,9 @@ async function getProducts() {
       s.name AS supplier,
       p.selling_price AS price,
       p.cost_price AS cost,
+      p.shipping_cost AS shippingCost,
+      p.tax_cost AS taxCost,
+      p.other_cost AS otherCost,
       p.stock_quantity AS stock,
       p.reorder_point AS reorderPoint,
       p.image_url AS imageUrl,
@@ -230,13 +235,18 @@ async function getProducts() {
       GROUP BY soi.product_id
     ) sold_items ON sold_items.product_id = p.id
     WHERE p.status = 'active'
-    GROUP BY p.id, p.sku, p.name, c.name, s.name, p.selling_price, p.cost_price, p.stock_quantity, p.reorder_point, p.image_url, sold_items.sold
+    GROUP BY p.id, p.sku, p.name, c.name, s.name, p.selling_price, p.cost_price, p.shipping_cost, p.tax_cost, p.other_cost, p.stock_quantity, p.reorder_point, p.image_url, sold_items.sold
     ORDER BY p.id
   `);
 
   const productRows = rows.map((row) => ({
     ...row,
     id: Number(row.id),
+    cost: Number(row.cost),
+    shippingCost: Number(row.shippingCost || 0),
+    taxCost: Number(row.taxCost || 0),
+    otherCost: Number(row.otherCost || 0),
+    landedCost: Number(row.cost || 0) + Number(row.shippingCost || 0) + Number(row.taxCost || 0) + Number(row.otherCost || 0),
     stock: Number(row.stock),
     reorderPoint: Number(row.reorderPoint),
     sold: Number(row.sold),
@@ -284,8 +294,12 @@ async function getSales() {
       p.sku,
       soi.quantity AS qty,
       COALESCE(c.name, 'Walk-in') AS customer,
+      c.phone AS customer_phone,
       so.order_date AS date,
-      so.total_amount AS total
+      so.total_amount AS total,
+      so.status,
+      soi.unit_price,
+      soi.unit_cost
     FROM sales_orders so
     JOIN sales_order_items soi ON soi.sales_order_id = so.id
     JOIN products p ON p.id = soi.product_id
@@ -300,7 +314,131 @@ async function getSales() {
     orderId: Number(row.order_id),
     itemId: Number(row.item_id),
     qty: Number(row.qty),
+    status: row.status,
+    unitPrice: Number(row.unit_price || 0),
+    unitCost: Number(row.unit_cost || 0),
+    cost: Number(row.unit_cost || 0) * Number(row.qty || 0),
+    profit: (Number(row.unit_price || 0) - Number(row.unit_cost || 0)) * Number(row.qty || 0),
+    customerPhone: row.customer_phone || "",
     date: toDateText(row.date),
+  }));
+}
+
+async function getProfitSummary() {
+  const rows = await query(`
+    SELECT
+      COALESCE(SUM(soi.quantity * soi.unit_price), 0) AS revenue,
+      COALESCE(SUM(soi.quantity * soi.unit_cost), 0) AS cost,
+      COALESCE(SUM(soi.quantity * (soi.unit_price - soi.unit_cost)), 0) AS profit,
+      COALESCE(SUM(soi.quantity), 0) AS units
+    FROM sales_orders so
+    JOIN sales_order_items soi ON soi.sales_order_id = so.id
+    WHERE so.status <> 'cancelled'
+  `);
+
+  const productRows = await query(`
+    SELECT
+      p.sku,
+      p.name,
+      COALESCE(SUM(soi.quantity), 0) AS units,
+      COALESCE(SUM(soi.quantity * soi.unit_price), 0) AS revenue,
+      COALESCE(SUM(soi.quantity * soi.unit_cost), 0) AS cost,
+      COALESCE(SUM(soi.quantity * (soi.unit_price - soi.unit_cost)), 0) AS profit
+    FROM sales_orders so
+    JOIN sales_order_items soi ON soi.sales_order_id = so.id
+    JOIN products p ON p.id = soi.product_id
+    WHERE so.status <> 'cancelled'
+    GROUP BY p.sku, p.name
+    ORDER BY profit DESC, units DESC
+    LIMIT 10
+  `);
+
+  const summary = rows[0] || {};
+  const revenue = Number(summary.revenue || 0);
+  const cost = Number(summary.cost || 0);
+  const profit = Number(summary.profit || 0);
+
+  return {
+    revenue,
+    cost,
+    profit,
+    margin: revenue > 0 ? (profit / revenue) * 100 : 0,
+    units: Number(summary.units || 0),
+    products: productRows.map((row) => {
+      const productRevenue = Number(row.revenue || 0);
+      const productProfit = Number(row.profit || 0);
+      return {
+        sku: row.sku,
+        name: row.name,
+        units: Number(row.units || 0),
+        revenue: productRevenue,
+        cost: Number(row.cost || 0),
+        profit: productProfit,
+        margin: productRevenue > 0 ? (productProfit / productRevenue) * 100 : 0,
+      };
+    }),
+  };
+}
+
+async function getStockMovements() {
+  const rows = await query(`
+    SELECT
+      im.id,
+      p.sku,
+      p.name AS product_name,
+      im.movement_type,
+      im.quantity,
+      im.balance_after,
+      im.reference_type,
+      im.note,
+      im.created_by,
+      im.created_at
+    FROM inventory_movements im
+    JOIN products p ON p.id = im.product_id
+    ORDER BY im.created_at DESC, im.id DESC
+    LIMIT 80
+  `);
+
+  return rows.map((row) => ({
+    id: Number(row.id),
+    sku: row.sku,
+    productName: row.product_name,
+    type: row.movement_type,
+    qty: Number(row.quantity || 0),
+    balanceAfter: Number(row.balance_after || 0),
+    referenceType: row.reference_type || "",
+    note: row.note || "",
+    user: row.created_by || "system",
+    createdAt: row.created_at,
+  }));
+}
+
+async function getCustomers() {
+  const rows = await query(`
+    SELECT
+      c.id,
+      c.name,
+      c.customer_type,
+      c.phone,
+      c.email,
+      COALESCE(SUM(CASE WHEN so.status <> 'cancelled' THEN so.total_amount ELSE 0 END), 0) AS total_spent,
+      COALESCE(SUM(CASE WHEN so.status <> 'cancelled' THEN 1 ELSE 0 END), 0) AS order_count,
+      MAX(so.order_date) AS last_order_date
+    FROM customers c
+    LEFT JOIN sales_orders so ON so.customer_id = c.id
+    GROUP BY c.id, c.name, c.customer_type, c.phone, c.email
+    ORDER BY total_spent DESC, c.name ASC
+  `);
+
+  return rows.map((row) => ({
+    id: Number(row.id),
+    name: row.name,
+    type: row.customer_type,
+    phone: row.phone || "",
+    email: row.email || "",
+    totalSpent: Number(row.total_spent || 0),
+    orderCount: Number(row.order_count || 0),
+    lastOrderDate: toDateText(row.last_order_date),
   }));
 }
 
@@ -363,6 +501,42 @@ app.get("/api/sales", asyncRoute(async (_request, response) => {
 
 app.get("/api/shipments", asyncRoute(async (_request, response) => {
   response.json(await getShipments());
+}));
+
+app.get("/api/profit-summary", asyncRoute(async (_request, response) => {
+  response.json(await getProfitSummary());
+}));
+
+app.get("/api/stock-movements", asyncRoute(async (_request, response) => {
+  response.json(await getStockMovements());
+}));
+
+app.get("/api/customers", asyncRoute(async (_request, response) => {
+  response.json(await getCustomers());
+}));
+
+app.post("/api/customers", asyncRoute(async (request, response) => {
+  const payload = request.body || {};
+  const name = String(payload.name || "").trim();
+
+  if (!name) {
+    response.status(400).json({ error: "Customer name is required" });
+    return;
+  }
+
+  await query(
+    `
+      INSERT INTO customers (name, customer_type, phone, email)
+      VALUES (?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        customer_type = VALUES(customer_type),
+        phone = VALUES(phone),
+        email = VALUES(email)
+    `,
+    [name, payload.type || "retail", payload.phone || null, payload.email || null]
+  );
+
+  response.json({ ok: true, customers: await getCustomers() });
 }));
 
 function normalizeImageUrl(value) {
@@ -488,8 +662,8 @@ app.post("/api/products", asyncRoute(async (request, response) => {
     await connection.execute(
       `
         INSERT INTO products
-          (sku, name, category_id, supplier_id, selling_price, cost_price, stock_quantity, reorder_point, image_url)
-        SELECT ?, ?, c.id, s.id, ?, ?, ?, ?, ?
+          (sku, name, category_id, supplier_id, selling_price, cost_price, shipping_cost, tax_cost, other_cost, stock_quantity, reorder_point, image_url)
+        SELECT ?, ?, c.id, s.id, ?, ?, ?, ?, ?, ?, ?, ?
         FROM categories c
         JOIN suppliers s ON s.name = ?
         WHERE c.name = ?
@@ -499,6 +673,9 @@ app.post("/api/products", asyncRoute(async (request, response) => {
         payload.name,
         Number(payload.price || 0),
         Number(payload.cost || 0),
+        Number(payload.shippingCost || 0),
+        Number(payload.taxCost || 0),
+        Number(payload.otherCost || 0),
         Number(payload.stock || 0),
         Number(payload.reorderPoint || 0),
         imageUrls[0] || null,
@@ -509,12 +686,12 @@ app.post("/api/products", asyncRoute(async (request, response) => {
 
     await connection.execute(
       `
-        INSERT INTO inventory_movements (product_id, movement_type, quantity, balance_after, reference_type, note)
-        SELECT id, 'opening', stock_quantity, stock_quantity, 'web', 'เพิ่มสินค้าจากหน้าเว็บ'
+        INSERT INTO inventory_movements (product_id, movement_type, quantity, balance_after, reference_type, note, created_by)
+        SELECT id, 'opening', stock_quantity, stock_quantity, 'web', 'เพิ่มสินค้าจากหน้าเว็บ', ?
         FROM products
         WHERE sku = ?
       `,
-      [payload.sku]
+      [request.authUser || loginUser, payload.sku]
     );
 
     await insertProductImages(connection, payload.sku, imageUrls, true);
@@ -713,12 +890,12 @@ app.post("/api/stock", asyncRoute(async (request, response) => {
     await connection.execute(`UPDATE products SET ${updateSql} WHERE sku = ?`, [qty, sku]);
     await connection.execute(
       `
-        INSERT INTO inventory_movements (product_id, movement_type, quantity, balance_after, reference_type, note)
-        SELECT id, ?, ?, stock_quantity, 'web', 'ปรับ stock จากหน้าเว็บ'
+        INSERT INTO inventory_movements (product_id, movement_type, quantity, balance_after, reference_type, note, created_by)
+        SELECT id, ?, ?, stock_quantity, 'web', ?, ?
         FROM products
         WHERE sku = ?
       `,
-      [movement, qty, sku]
+      [movement, qty, request.body.reason || "ปรับ stock จากหน้าเว็บ", request.authUser || loginUser, sku]
     );
   });
 
@@ -778,7 +955,7 @@ app.post("/api/sales/sample", asyncRoute(async (request, response) => {
     await connection.execute(
       `
         INSERT INTO inventory_movements (product_id, movement_type, quantity, balance_after, reference_type, reference_id, note)
-        SELECT p.id, 'sale_out', ?, p.stock_quantity, 'sales_order', ?, 'ขายตัวอย่างจากหน้าเว็บ'
+        SELECT p.id, 'sale_out', ?, p.stock_quantity, 'sales_order', ?, 'เธเธฒเธขเธ•เธฑเธงเธญเธขเนเธฒเธเธเธฒเธเธซเธเนเธฒเน€เธงเนเธ'
         FROM products p
         WHERE p.sku = ?
           AND p.status = 'active'
@@ -794,36 +971,39 @@ app.post("/api/sales", asyncRoute(async (request, response) => {
   const { sku } = request.body;
   const qty = Math.max(1, Number(request.body.qty || 1));
   const customer = request.body.customer || "Walk-in";
+  const customerPhone = request.body.customerPhone || null;
   const date = request.body.date || new Date().toISOString().slice(0, 10);
+  const status = allowedSaleStatuses.has(request.body.status) ? request.body.status : "paid";
 
   await transaction(async (connection) => {
     await connection.execute(
       `
-        INSERT INTO customers (name, customer_type)
-        VALUES (?, 'online')
-        ON DUPLICATE KEY UPDATE name = VALUES(name)
+        INSERT INTO customers (name, customer_type, phone)
+        VALUES (?, 'online', ?)
+        ON DUPLICATE KEY UPDATE phone = COALESCE(VALUES(phone), phone)
       `,
-      [customer]
+      [customer, customerPhone]
     );
 
     const [products] = await connection.execute(
-      "SELECT id, selling_price, cost_price, stock_quantity FROM products WHERE sku = ? AND status = 'active'",
+      "SELECT id, selling_price, cost_price, shipping_cost, tax_cost, other_cost, stock_quantity FROM products WHERE sku = ? AND status = 'active'",
       [sku]
     );
 
     if (!products.length) throw new Error("Product not found");
 
     const product = products[0];
-    if (Number(product.stock_quantity) < qty) throw new Error("Not enough stock for this sale");
+    if (status !== "cancelled" && Number(product.stock_quantity) < qty) throw new Error("Not enough stock for this sale");
 
     const [customers] = await connection.execute("SELECT id FROM customers WHERE name = ?", [customer]);
     const total = qty * Number(product.selling_price);
+    const actualCost = Number(product.cost_price) + Number(product.shipping_cost || 0) + Number(product.tax_cost || 0) + Number(product.other_cost || 0);
     const [orderResult] = await connection.execute(
       `
-        INSERT INTO sales_orders (order_no, customer_id, order_date, total_amount)
-        VALUES (CONCAT('SO-WEB-', DATE_FORMAT(NOW(6), '%Y%m%d%H%i%s%f')), ?, ?, ?)
+        INSERT INTO sales_orders (order_no, customer_id, order_date, total_amount, status)
+        VALUES (CONCAT('SO-WEB-', DATE_FORMAT(NOW(6), '%Y%m%d%H%i%s%f')), ?, ?, ?, ?)
       `,
-      [customers[0].id, date, total]
+      [customers[0].id, date, total, status]
     );
 
     await connection.execute(
@@ -831,13 +1011,25 @@ app.post("/api/sales", asyncRoute(async (request, response) => {
         INSERT INTO sales_order_items (sales_order_id, product_id, quantity, unit_price, unit_cost)
         VALUES (?, ?, ?, ?, ?)
       `,
-      [orderResult.insertId, product.id, qty, product.selling_price, product.cost_price]
+      [orderResult.insertId, product.id, qty, product.selling_price, actualCost]
     );
 
-    await connection.execute("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?", [
-      qty,
-      product.id,
-    ]);
+    if (status !== "cancelled") {
+      await connection.execute("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?", [
+        qty,
+        product.id,
+      ]);
+
+      await connection.execute(
+        `
+          INSERT INTO inventory_movements (product_id, movement_type, quantity, balance_after, reference_type, reference_id, note, created_by)
+          SELECT id, 'sale_out', ?, stock_quantity, 'sales_order', ?, 'บันทึกยอดขาย', ?
+          FROM products
+          WHERE id = ?
+        `,
+        [qty, orderResult.insertId, request.authUser || loginUser, product.id]
+      );
+    }
   });
 
   response.json({ ok: true, products: await getProducts(), sales: await getSales() });
@@ -847,7 +1039,9 @@ app.put("/api/sales/:orderNo", asyncRoute(async (request, response) => {
   const { sku } = request.body;
   const qty = Math.max(1, Number(request.body.qty || 1));
   const customer = request.body.customer || "Walk-in";
+  const customerPhone = request.body.customerPhone || null;
   const date = request.body.date || new Date().toISOString().slice(0, 10);
+  const status = allowedSaleStatuses.has(request.body.status) ? request.body.status : "paid";
 
   await transaction(async (connection) => {
     const [existingRows] = await connection.execute(
@@ -872,28 +1066,39 @@ app.put("/api/sales/:orderNo", asyncRoute(async (request, response) => {
 
     await connection.execute(
       `
-        INSERT INTO customers (name, customer_type)
-        VALUES (?, 'online')
-        ON DUPLICATE KEY UPDATE name = VALUES(name)
+        INSERT INTO inventory_movements (product_id, movement_type, quantity, balance_after, reference_type, reference_id, note, created_by)
+        SELECT id, 'adjust_in', ?, stock_quantity, 'sales_order', ?, 'แก้ไขยอดขาย คืน stock เดิม', ?
+        FROM products
+        WHERE id = ?
       `,
-      [customer]
+      [existing.old_qty, existing.order_id, request.authUser || loginUser, existing.old_product_id]
+    );
+
+    await connection.execute(
+      `
+        INSERT INTO customers (name, customer_type, phone)
+        VALUES (?, 'online', ?)
+        ON DUPLICATE KEY UPDATE phone = COALESCE(VALUES(phone), phone)
+      `,
+      [customer, customerPhone]
     );
 
     const [customers] = await connection.execute("SELECT id FROM customers WHERE name = ?", [customer]);
     const [products] = await connection.execute(
-      "SELECT id, selling_price, cost_price, stock_quantity FROM products WHERE sku = ? AND status = 'active'",
+      "SELECT id, selling_price, cost_price, shipping_cost, tax_cost, other_cost, stock_quantity FROM products WHERE sku = ? AND status = 'active'",
       [sku]
     );
 
     if (!products.length) throw new Error("Product not found");
 
     const product = products[0];
-    if (Number(product.stock_quantity) < qty) throw new Error("Not enough stock for this sale");
+    if (status !== "cancelled" && Number(product.stock_quantity) < qty) throw new Error("Not enough stock for this sale");
 
     const total = qty * Number(product.selling_price);
+    const actualCost = Number(product.cost_price) + Number(product.shipping_cost || 0) + Number(product.tax_cost || 0) + Number(product.other_cost || 0);
     await connection.execute(
-      "UPDATE sales_orders SET customer_id = ?, order_date = ?, total_amount = ? WHERE id = ?",
-      [customers[0].id, date, total, existing.order_id]
+      "UPDATE sales_orders SET customer_id = ?, order_date = ?, total_amount = ?, status = ? WHERE id = ?",
+      [customers[0].id, date, total, status, existing.order_id]
     );
     await connection.execute(
       `
@@ -901,12 +1106,24 @@ app.put("/api/sales/:orderNo", asyncRoute(async (request, response) => {
         SET product_id = ?, quantity = ?, unit_price = ?, unit_cost = ?
         WHERE id = ?
       `,
-      [product.id, qty, product.selling_price, product.cost_price, existing.item_id]
+      [product.id, qty, product.selling_price, actualCost, existing.item_id]
     );
-    await connection.execute("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?", [
-      qty,
-      product.id,
-    ]);
+    if (status !== "cancelled") {
+      await connection.execute("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?", [
+        qty,
+        product.id,
+      ]);
+
+      await connection.execute(
+        `
+          INSERT INTO inventory_movements (product_id, movement_type, quantity, balance_after, reference_type, reference_id, note, created_by)
+          SELECT id, 'sale_out', ?, stock_quantity, 'sales_order', ?, 'แก้ไขยอดขาย ตัด stock ใหม่', ?
+          FROM products
+          WHERE id = ?
+        `,
+        [qty, existing.order_id, request.authUser || loginUser, product.id]
+      );
+    }
   });
 
   response.json({ ok: true, products: await getProducts(), sales: await getSales() });
@@ -930,6 +1147,15 @@ app.delete("/api/sales/:orderNo", asyncRoute(async (request, response) => {
         row.quantity,
         row.product_id,
       ]);
+      await connection.execute(
+        `
+          INSERT INTO inventory_movements (product_id, movement_type, quantity, balance_after, reference_type, reference_id, note, created_by)
+          SELECT id, 'adjust_in', ?, stock_quantity, 'sales_order', ?, 'ยกเลิกยอดขาย คืน stock', ?
+          FROM products
+          WHERE id = ?
+        `,
+        [row.quantity, row.order_id, request.authUser || loginUser, row.product_id]
+      );
     }
 
     if (rows.length) {

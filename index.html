@@ -22,6 +22,8 @@
         <a href="#manage">จัดการ Stock</a>
         <a href="#imports">นำเข้า</a>
         <a href="#sales">ยอดขาย</a>
+        <a href="#operations">รายงาน</a>
+        <a href="#customers">ลูกค้า</a>
         <a href="#alerts">แจ้งเตือน</a>
       </nav>
     </aside>
@@ -47,14 +49,19 @@
           <small id="monthlyOrders">0 orders</small>
         </article>
         <article class="metric-card">
-          <span>มูลค่า Stock</span>
-          <strong id="stockValue">฿0</strong>
-          <small>คำนวณจากราคาขายในรายการสินค้า</small>
+          <span>ต้นทุนขายรวม</span>
+          <strong id="salesCost">฿0</strong>
+          <small>คิดจากต้นทุนจริงต่อชิ้น</small>
         </article>
         <article class="metric-card">
-          <span>สินค้าคงเหลือรวม</span>
-          <strong id="totalUnits">0</strong>
-          <small id="lowStockCount">0 รายการใกล้หมด</small>
+          <span>กำไรขั้นต้น</span>
+          <strong id="profitValue">฿0</strong>
+          <small id="profitMargin">Margin 0%</small>
+        </article>
+        <article class="metric-card">
+          <span>มูลค่า Stock</span>
+          <strong id="stockValue">฿0</strong>
+          <small id="stockSummary">0 ชิ้น</small>
         </article>
         <article class="metric-card">
           <span>Shipment กำลังมา</span>
@@ -83,8 +90,8 @@
                   <th>หมวดหมู่</th>
                   <th>ผู้ขาย/ซัพพลายเออร์</th>
                   <th>ราคาขาย/ชิ้น</th>
-                  <th>ต้นทุน/ชิ้น</th>
-                  <th>ต้นทุนรวม</th>
+                  <th>ต้นทุนจริง/ชิ้น</th>
+                  <th>ต้นทุนคงเหลือรวม</th>
                   <th>ขายแล้ว (ชิ้น)</th>
                   <th>คงเหลือ (ชิ้น)</th>
                   <th>สถานะ</th>
@@ -157,14 +164,28 @@
             </label>
             <div class="form-row">
               <label>
-                ราคาขาย
+                ราคาขาย/ชิ้น
                 <input id="newPrice" type="number" min="0" step="1" required />
               </label>
               <label>
-                ทุน
+                ต้นทุนสินค้า/ชิ้น
                 <input id="newCost" type="number" min="0" step="1" required />
               </label>
             </div>
+            <div class="form-row">
+              <label>
+                ค่าส่ง/ชิ้น
+                <input id="newShippingCost" type="number" min="0" step="1" value="0" />
+              </label>
+              <label>
+                ภาษี/ชิ้น
+                <input id="newTaxCost" type="number" min="0" step="1" value="0" />
+              </label>
+            </div>
+            <label>
+              ค่าใช้จ่ายอื่น/ชิ้น
+              <input id="newOtherCost" type="number" min="0" step="1" value="0" />
+            </label>
             <div class="form-row">
               <label>
                 Stock เริ่มต้น
@@ -202,6 +223,10 @@
                 </select>
               </label>
             </div>
+            <label>
+              เหตุผล
+              <input id="stockReason" type="text" placeholder="เช่น รับของเข้า / ลบของเสีย / ปรับยอดตรวจนับ" />
+            </label>
             <button id="adjustStockBtn" type="button">บันทึกจำนวน</button>
           </section>
 
@@ -231,8 +256,8 @@
                 <th>หมวดหมู่</th>
                 <th>ผู้ขาย/ซัพพลายเออร์</th>
                 <th>ราคาขาย/ชิ้น</th>
-                <th>ต้นทุน/ชิ้น</th>
-                <th>ต้นทุนรวม</th>
+                <th>ต้นทุนจริง/ชิ้น</th>
+                <th>ต้นทุนคงเหลือรวม</th>
                 <th>คงเหลือ (ชิ้น)</th>
                 <th>จุดเตือนเติม (ชิ้น)</th>
                 <th>จัดการ</th>
@@ -363,8 +388,21 @@
               <input id="saleCustomer" type="text" value="Walk-in" required />
             </label>
             <label>
+              เบอร์โทรลูกค้า
+              <input id="saleCustomerPhone" type="tel" placeholder="เช่น 0891234567" />
+            </label>
+            <label>
               วันที่ขาย
               <input id="saleDate" type="date" required />
+            </label>
+            <label>
+              สถานะการขาย
+              <select id="saleStatus">
+                <option value="pending">รอชำระเงิน</option>
+                <option value="paid" selected>ชำระแล้ว</option>
+                <option value="shipped">ส่งของแล้ว</option>
+                <option value="cancelled">ยกเลิก</option>
+              </select>
             </label>
           </div>
           <div class="sales-form-actions">
@@ -374,6 +412,61 @@
           <span id="salesStatus" class="updated-at"></span>
         </form>
         <div id="salesList" class="sales-list"></div>
+      </section>
+
+      <section id="operations" class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Profit & Stock history</p>
+            <h2>รายงานกำไรและประวัติ Stock</h2>
+          </div>
+        </div>
+        <div class="operations-grid">
+          <section class="manager-card">
+            <h3>กำไรต่อสินค้า</h3>
+            <div id="profitProductList" class="report-list"></div>
+          </section>
+          <section class="manager-card">
+            <h3>Stock Movement</h3>
+            <div id="stockMovementList" class="report-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="customers" class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Customer Management</p>
+            <h2>จัดการลูกค้า</h2>
+          </div>
+          <span id="customerStatus" class="updated-at"></span>
+        </div>
+        <form id="customerForm" class="manager-card customer-form-card">
+          <div class="customer-form-grid">
+            <label>
+              ชื่อลูกค้า
+              <input id="customerName" type="text" required />
+            </label>
+            <label>
+              เบอร์โทร
+              <input id="customerPhone" type="tel" />
+            </label>
+            <label>
+              Email
+              <input id="customerEmail" type="email" />
+            </label>
+            <label>
+              ประเภท
+              <select id="customerType">
+                <option value="retail">ลูกค้าทั่วไป</option>
+                <option value="online">Online</option>
+                <option value="wholesale">Wholesale</option>
+              </select>
+            </label>
+          </div>
+          <button type="submit">บันทึกลูกค้า</button>
+        </form>
+        <div id="customerList" class="report-list customer-list"></div>
       </section>
     </main>
 

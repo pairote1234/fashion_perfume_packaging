@@ -191,7 +191,7 @@ button:hover {
 }
 
 .metrics-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   margin-bottom: 18px;
 }
 
@@ -399,7 +399,8 @@ th {
 .alert-list,
 .seller-list,
 .sales-list,
-.shipment-list {
+.shipment-list,
+.report-list {
   display: grid;
   gap: 10px;
 }
@@ -481,7 +482,56 @@ th {
 
 .sales-form-grid {
   display: grid;
-  grid-template-columns: 1.4fr 0.7fr 1fr 0.8fr;
+  grid-template-columns: 1.3fr 0.65fr 1fr 0.8fr 0.8fr 0.9fr;
+  gap: 12px;
+}
+
+.operations-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.report-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  min-width: 0;
+}
+
+.report-item strong,
+.report-item small {
+  display: block;
+}
+
+.report-item small {
+  color: var(--muted);
+}
+
+.report-numbers {
+  display: grid;
+  justify-items: end;
+  align-content: center;
+  gap: 4px;
+  min-width: 120px;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-numbers strong {
+  color: var(--green);
+}
+
+.customer-form-card {
+  margin-bottom: 18px;
+}
+
+.customer-form-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 1fr 0.8fr;
   gap: 12px;
 }
 
@@ -952,7 +1002,7 @@ th {
   }
 
   .nav {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(8, minmax(0, 1fr));
   }
 
   .metrics-grid,
@@ -962,6 +1012,8 @@ th {
   .tracking-manager,
   .shipment-form-grid,
   .sales-form-grid,
+  .operations-grid,
+  .customer-form-grid,
   .manager-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -1034,6 +1086,8 @@ th {
   .shipment-list,
   .tracking-manager,
   .shipment-form-grid,
+  .operations-grid,
+  .customer-form-grid,
   .manager-grid,
   .sales-form-grid,
   .form-row {
