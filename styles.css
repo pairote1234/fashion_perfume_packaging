@@ -275,28 +275,36 @@ th {
 #products table td:nth-child(1),
 .manage-table-wrap table th:nth-child(1),
 .manage-table-wrap table td:nth-child(1) {
-  width: 24%;
+  width: 20%;
 }
 
 #products table th:nth-child(2),
 #products table td:nth-child(2),
 .manage-table-wrap table th:nth-child(2),
 .manage-table-wrap table td:nth-child(2) {
-  width: 13%;
+  width: 11%;
 }
 
 #products table th:nth-child(3),
 #products table td:nth-child(3),
 .manage-table-wrap table th:nth-child(3),
 .manage-table-wrap table td:nth-child(3) {
-  width: 12%;
+  width: 10%;
 }
 
 #products table th:nth-child(6),
 #products table td:nth-child(6),
 .manage-table-wrap table th:nth-child(6),
 .manage-table-wrap table td:nth-child(6) {
-  width: 10%;
+  width: 9%;
+}
+
+#products table th,
+#products table td,
+.manage-table-wrap table th,
+.manage-table-wrap table td {
+  padding-left: 8px;
+  padding-right: 8px;
 }
 
 .product-name {
