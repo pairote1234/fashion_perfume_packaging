@@ -44,6 +44,17 @@ CREATE TABLE IF NOT EXISTS products (
   CONSTRAINT chk_products_stock CHECK (stock_quantity >= 0 AND reorder_point >= 0)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS product_images (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  product_id INT NOT NULL,
+  image_url LONGTEXT NOT NULL,
+  is_primary TINYINT(1) NOT NULL DEFAULT 0,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_product_images_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+  INDEX idx_product_images_product (product_id, is_primary, sort_order)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS inventory_movements (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   product_id INT NOT NULL,

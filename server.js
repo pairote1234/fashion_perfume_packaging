@@ -34,7 +34,7 @@ const loginPassword = process.env.APP_PASSWORD || "?kapi@2026";
 const authSecret = process.env.AUTH_SECRET || "supplypilot-local-auth-secret";
 const authCookieName = "supplypilot_auth";
 
-app.use(express.json({ limit: "6mb" }));
+app.use(express.json({ limit: "18mb" }));
 
 function parseCookies(cookieHeader = "") {
   return Object.fromEntries(
@@ -234,13 +234,45 @@ async function getProducts() {
     ORDER BY p.id
   `);
 
-  return rows.map((row) => ({
+  const productRows = rows.map((row) => ({
     ...row,
     id: Number(row.id),
     stock: Number(row.stock),
     reorderPoint: Number(row.reorderPoint),
     sold: Number(row.sold),
   }));
+
+  if (!productRows.length) return productRows;
+
+  const imageRows = await query(
+    `
+      SELECT id, product_id, image_url, is_primary, sort_order
+      FROM product_images
+      WHERE product_id IN (${productRows.map(() => "?").join(",")})
+      ORDER BY is_primary DESC, sort_order ASC, id ASC
+    `,
+    productRows.map((product) => product.id)
+  );
+  const imagesByProductId = new Map();
+
+  for (const image of imageRows) {
+    const productImages = imagesByProductId.get(image.product_id) || [];
+    productImages.push({
+      id: Number(image.id),
+      url: image.image_url,
+      isPrimary: Boolean(image.is_primary),
+    });
+    imagesByProductId.set(image.product_id, productImages);
+  }
+
+  return productRows.map((product) => {
+    const images = imagesByProductId.get(product.id) || [];
+    return {
+      ...product,
+      images,
+      imageUrl: images[0]?.url || product.imageUrl || null,
+    };
+  });
 }
 
 async function getSales() {
@@ -353,9 +385,86 @@ function normalizeImageUrl(value) {
   return imageUrl;
 }
 
+function normalizeImageUrls(value) {
+  if (!value) return [];
+  const values = Array.isArray(value) ? value : [value];
+  return values.map(normalizeImageUrl).filter(Boolean).slice(0, 20);
+}
+
+async function insertProductImages(connection, sku, imageUrls, replace = false) {
+  if (replace) {
+    await connection.execute(
+      `
+        DELETE pi
+        FROM product_images pi
+        JOIN products p ON p.id = pi.product_id
+        WHERE p.sku = ?
+      `,
+      [sku]
+    );
+  }
+
+  const [productRows] = await connection.execute("SELECT id FROM products WHERE sku = ?", [sku]);
+  if (!productRows.length) return;
+
+  const productId = productRows[0].id;
+  const [sortRows] = await connection.execute(
+    "SELECT COALESCE(MAX(sort_order) + 1, 0) AS nextSort FROM product_images WHERE product_id = ?",
+    [productId]
+  );
+  let nextSort = Number(sortRows[0]?.nextSort || 0);
+
+  for (let index = 0; index < imageUrls.length; index += 1) {
+    await connection.execute(
+      `
+        INSERT INTO product_images (product_id, image_url, is_primary, sort_order)
+        VALUES (?, ?, ?, ?)
+      `,
+      [productId, imageUrls[index], replace && index === 0 ? 1 : 0, nextSort]
+    );
+    nextSort += 1;
+  }
+
+  const [primaryRows] = await connection.execute(
+    `
+      SELECT pi.id
+      FROM product_images pi
+      JOIN products p ON p.id = pi.product_id
+      WHERE p.sku = ?
+      ORDER BY pi.is_primary DESC, pi.sort_order ASC, pi.id ASC
+      LIMIT 1
+    `,
+    [sku]
+  );
+
+  if (primaryRows.length) {
+    await connection.execute(
+      `
+        UPDATE product_images pi
+        JOIN products p ON p.id = pi.product_id
+        SET pi.is_primary = CASE WHEN pi.id = ? THEN 1 ELSE 0 END
+        WHERE p.sku = ?
+      `,
+      [primaryRows[0].id, sku]
+    );
+
+    await connection.execute(
+      `
+        UPDATE products p
+        JOIN product_images pi ON pi.product_id = p.id AND pi.id = ?
+        SET p.image_url = pi.image_url
+        WHERE p.sku = ?
+      `,
+      [primaryRows[0].id, sku]
+    );
+  } else {
+    await connection.execute("UPDATE products SET image_url = NULL WHERE sku = ?", [sku]);
+  }
+}
+
 app.post("/api/products", asyncRoute(async (request, response) => {
   const payload = request.body;
-  const imageUrl = normalizeImageUrl(payload.imageUrl);
+  const imageUrls = normalizeImageUrls(payload.imageUrls || payload.imageUrl);
 
   await transaction(async (connection) => {
     await connection.execute(
@@ -392,7 +501,7 @@ app.post("/api/products", asyncRoute(async (request, response) => {
         Number(payload.cost || 0),
         Number(payload.stock || 0),
         Number(payload.reorderPoint || 0),
-        imageUrl,
+        imageUrls[0] || null,
         payload.supplier,
         payload.category,
       ]
@@ -407,20 +516,128 @@ app.post("/api/products", asyncRoute(async (request, response) => {
       `,
       [payload.sku]
     );
+
+    await insertProductImages(connection, payload.sku, imageUrls, true);
   });
 
   response.json({ ok: true, products: await getProducts() });
 }));
 
 app.put("/api/products/:sku/image", asyncRoute(async (request, response) => {
-  const imageUrl = normalizeImageUrl(request.body?.imageUrl);
-  const [result] = await pool.execute(
-    "UPDATE products SET image_url = ? WHERE sku = ? AND status = 'active'",
-    [imageUrl, request.params.sku]
-  );
+  const imageUrls = normalizeImageUrls(request.body?.imageUrls || request.body?.imageUrl);
+  const result = await transaction(async (connection) => {
+    const [rows] = await connection.execute("SELECT id FROM products WHERE sku = ? AND status = 'active'", [
+      request.params.sku,
+    ]);
 
-  if (result.affectedRows === 0) {
+    if (!rows.length) return { found: false };
+    await insertProductImages(connection, request.params.sku, imageUrls, true);
+    return { found: true };
+  });
+
+  if (!result.found) {
     response.status(404).json({ error: "Product not found" });
+    return;
+  }
+
+  response.json({ ok: true, products: await getProducts() });
+}));
+
+app.post("/api/products/:sku/images", asyncRoute(async (request, response) => {
+  const imageUrls = normalizeImageUrls(request.body?.imageUrls || request.body?.imageUrl);
+
+  if (!imageUrls.length) {
+    response.status(400).json({ error: "No images provided" });
+    return;
+  }
+
+  const result = await transaction(async (connection) => {
+    const [rows] = await connection.execute("SELECT id FROM products WHERE sku = ? AND status = 'active'", [
+      request.params.sku,
+    ]);
+
+    if (!rows.length) return { found: false };
+    await insertProductImages(connection, request.params.sku, imageUrls, false);
+    return { found: true };
+  });
+
+  if (!result.found) {
+    response.status(404).json({ error: "Product not found" });
+    return;
+  }
+
+  response.json({ ok: true, products: await getProducts() });
+}));
+
+app.put("/api/products/:sku/images/:imageId/primary", asyncRoute(async (request, response) => {
+  const result = await transaction(async (connection) => {
+    const [rows] = await connection.execute(
+      `
+        SELECT pi.id, pi.image_url
+        FROM product_images pi
+        JOIN products p ON p.id = pi.product_id
+        WHERE p.sku = ? AND pi.id = ?
+      `,
+      [request.params.sku, request.params.imageId]
+    );
+
+    if (!rows.length) return { found: false };
+
+    await connection.execute(
+      `
+        UPDATE product_images pi
+        JOIN products p ON p.id = pi.product_id
+        SET pi.is_primary = CASE WHEN pi.id = ? THEN 1 ELSE 0 END
+        WHERE p.sku = ?
+      `,
+      [request.params.imageId, request.params.sku]
+    );
+    await connection.execute("UPDATE products SET image_url = ? WHERE sku = ?", [
+      rows[0].image_url,
+      request.params.sku,
+    ]);
+
+    return { found: true };
+  });
+
+  if (!result.found) {
+    response.status(404).json({ error: "Image not found" });
+    return;
+  }
+
+  response.json({ ok: true, products: await getProducts() });
+}));
+
+app.delete("/api/products/:sku/images/:imageId", asyncRoute(async (request, response) => {
+  const result = await transaction(async (connection) => {
+    const [rows] = await connection.execute(
+      `
+        SELECT pi.id
+        FROM product_images pi
+        JOIN products p ON p.id = pi.product_id
+        WHERE p.sku = ? AND pi.id = ?
+      `,
+      [request.params.sku, request.params.imageId]
+    );
+
+    if (!rows.length) return { found: false };
+
+    await connection.execute(
+      `
+        DELETE pi
+        FROM product_images pi
+        JOIN products p ON p.id = pi.product_id
+        WHERE p.sku = ? AND pi.id = ?
+      `,
+      [request.params.sku, request.params.imageId]
+    );
+    await insertProductImages(connection, request.params.sku, [], false);
+
+    return { found: true };
+  });
+
+  if (!result.found) {
+    response.status(404).json({ error: "Image not found" });
     return;
   }
 

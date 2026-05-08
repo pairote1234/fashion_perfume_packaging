@@ -77,6 +77,31 @@ async function ensureProductImageColumn(connection) {
   await connection.query("ALTER TABLE products ADD COLUMN image_url LONGTEXT NULL AFTER reorder_point");
 }
 
+async function ensureProductImagesTable(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS product_images (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      product_id INT NOT NULL,
+      image_url LONGTEXT NOT NULL,
+      is_primary TINYINT(1) NOT NULL DEFAULT 0,
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT fk_product_images_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+      INDEX idx_product_images_product (product_id, is_primary, sort_order)
+    ) ENGINE=InnoDB
+  `);
+
+  await connection.query(`
+    INSERT INTO product_images (product_id, image_url, is_primary, sort_order)
+    SELECT p.id, p.image_url, 1, 0
+    FROM products p
+    LEFT JOIN product_images pi ON pi.product_id = p.id
+    WHERE p.image_url IS NOT NULL
+      AND p.image_url <> ''
+      AND pi.id IS NULL
+  `);
+}
+
 async function main() {
   const connection = await mysql.createConnection(config());
 
@@ -89,6 +114,7 @@ async function main() {
 
     await connection.query(ddlSql);
     await ensureProductImageColumn(connection);
+    await ensureProductImagesTable(connection);
 
     const alreadySeeded = await tableHasRows(connection, "products");
     if (!alreadySeeded && seedSql.trim()) {

@@ -193,6 +193,11 @@ const productImageFile = document.querySelector("#productImageFile");
 const imagePreview = document.querySelector("#imagePreview");
 const saveImageBtn = document.querySelector("#saveImageBtn");
 const clearImageBtn = document.querySelector("#clearImageBtn");
+const productGalleryModal = document.querySelector("#productGalleryModal");
+const galleryTitle = document.querySelector("#galleryTitle");
+const galleryMeta = document.querySelector("#galleryMeta");
+const galleryGrid = document.querySelector("#galleryGrid");
+const closeGalleryBtn = document.querySelector("#closeGalleryBtn");
 const manageTable = document.querySelector("#manageTable");
 const manageStatus = document.querySelector("#manageStatus");
 const trackingStatusForm = document.querySelector("#trackingStatusForm");
@@ -247,14 +252,26 @@ function formatDate(dateText) {
 }
 
 function productImageMarkup(product, size = "thumb") {
-  const imageUrl = product?.imageUrl;
+  const images = productImages(product);
+  const imageUrl = images[0]?.url || product?.imageUrl;
   const label = product?.name || "Product";
 
   if (imageUrl) {
-    return `<img class="product-photo ${size}" src="${imageUrl}" alt="${label}" loading="lazy" />`;
+    return `
+      <button class="product-photo-button" type="button" data-gallery-sku="${product.sku}" aria-label="เปิดรูปสินค้า ${label}">
+        <img class="product-photo ${size}" src="${imageUrl}" alt="${label}" loading="lazy" />
+        ${images.length > 1 ? `<span class="photo-count">${images.length}</span>` : ""}
+      </button>
+    `;
   }
 
   return `<span class="product-photo placeholder ${size}" aria-hidden="true">SP</span>`;
+}
+
+function productImages(product) {
+  if (Array.isArray(product?.images) && product.images.length) return product.images;
+  if (product?.imageUrl) return [{ id: "primary", url: product.imageUrl, isPrimary: true }];
+  return [];
 }
 
 function productIdentityMarkup(product) {
@@ -287,7 +304,7 @@ function readImage(file) {
       const image = new Image();
       image.onerror = () => reject(new Error("Cannot load image"));
       image.onload = () => {
-        const maxSide = 900;
+        const maxSide = 760;
         const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
         const width = Math.max(1, Math.round(image.width * scale));
         const height = Math.max(1, Math.round(image.height * scale));
@@ -299,12 +316,16 @@ function readImage(file) {
         context.fillStyle = "#ffffff";
         context.fillRect(0, 0, width, height);
         context.drawImage(image, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", 0.82));
+        resolve(canvas.toDataURL("image/jpeg", 0.78));
       };
       image.src = reader.result;
     };
     reader.readAsDataURL(file);
   });
+}
+
+async function readImages(fileList) {
+  return Promise.all([...fileList].slice(0, 12).map(readImage));
 }
 
 function filteredProducts() {
@@ -756,9 +777,9 @@ async function addProduct(event) {
     reorderPoint: numberFromInput("#newReorder"),
   };
 
-  if (newProductImage.files[0]) {
+  if (newProductImage.files.length) {
     try {
-      payload.imageUrl = await readImage(newProductImage.files[0]);
+      payload.imageUrls = await readImages(newProductImage.files);
     } catch (error) {
       setManageStatus(`ยังอ่านรูปสินค้าไม่ได้: ${error.message}`);
       return;
@@ -775,7 +796,12 @@ async function addProduct(event) {
     syncProducts(result.products);
     setManageStatus(`เพิ่มสินค้า ${sku} ลง database แล้ว`);
   } catch (error) {
-    products.push({ ...payload, sold: 0 });
+    products.push({
+      ...payload,
+      imageUrl: payload.imageUrls?.[0] || null,
+      images: (payload.imageUrls || []).map((url, index) => ({ id: `local-new-${index}`, url, isPrimary: index === 0 })),
+      sold: 0,
+    });
     productForm.reset();
     hydrateCategoryFilter();
     render();
@@ -785,23 +811,45 @@ async function addProduct(event) {
 
 function renderImagePreview() {
   const product = productBySku(imageProductSelect.value);
+  const images = productImages(product);
 
-  imagePreview.innerHTML = productImageMarkup(product, "preview");
-  imagePreview.classList.toggle("is-empty", !product?.imageUrl);
-  clearImageBtn.disabled = !product?.imageUrl;
+  imagePreview.innerHTML = images.length
+    ? images
+        .map(
+          (image, index) => `
+            <article class="manager-image-tile">
+              <button type="button" data-gallery-sku="${product.sku}">
+                <img src="${image.url}" alt="${product.name} ${index + 1}" loading="lazy" />
+              </button>
+              <div class="manager-image-actions">
+                <button class="secondary-button" type="button" data-primary-image-id="${image.id}">${
+                  image.isPrimary || index === 0 ? "รูปหลัก" : "ตั้งเป็นรูปหลัก"
+                }</button>
+                <button class="danger-button" type="button" data-delete-image-id="${image.id}">ลบ</button>
+              </div>
+            </article>
+          `
+        )
+        .join("")
+    : '<span class="empty-image-text">ยังไม่มีรูปสินค้า</span>';
+  imagePreview.classList.toggle("is-empty", !images.length);
+  clearImageBtn.disabled = !images.length;
 }
 
-async function saveProductImage(imageUrl) {
+async function saveProductImages(imageUrls, replace = false) {
   const sku = imageProductSelect.value;
   const product = productBySku(sku);
 
   if (!product) return;
 
   try {
-    const result = await apiRequest(`/api/products/${encodeURIComponent(sku)}/image`, {
-      method: "PUT",
-      body: JSON.stringify({ imageUrl }),
-    });
+    const result = await apiRequest(
+      `/api/products/${encodeURIComponent(sku)}${replace ? "/image" : "/images"}`,
+      {
+        method: replace ? "PUT" : "POST",
+        body: JSON.stringify({ imageUrls }),
+      }
+    );
 
     syncProducts(result.products);
     imageProductSelect.value = sku;
@@ -809,7 +857,16 @@ async function saveProductImage(imageUrl) {
     renderImagePreview();
     setManageStatus(`อัปเดตรูปสินค้า ${product.name} แล้ว`);
   } catch (error) {
-    product.imageUrl = imageUrl;
+    const currentImages = productImages(product);
+    const nextImages = replace
+      ? imageUrls.map((url, index) => ({ id: `local-${index}`, url, isPrimary: index === 0 }))
+      : [
+          ...currentImages,
+          ...imageUrls.map((url, index) => ({ id: `local-${Date.now()}-${index}`, url, isPrimary: false })),
+        ];
+
+    product.images = nextImages;
+    product.imageUrl = nextImages[0]?.url || null;
     productImageFile.value = "";
     render();
     imageProductSelect.value = sku;
@@ -818,10 +875,60 @@ async function saveProductImage(imageUrl) {
   }
 }
 
-async function saveSelectedProductImage() {
-  const file = productImageFile.files[0];
+async function setPrimaryProductImage(imageId) {
+  const sku = imageProductSelect.value;
+  const product = productBySku(sku);
+  if (!product || !imageId) return;
 
-  if (!file) {
+  try {
+    const result = await apiRequest(`/api/products/${encodeURIComponent(sku)}/images/${imageId}/primary`, {
+      method: "PUT",
+    });
+
+    syncProducts(result.products);
+    imageProductSelect.value = sku;
+    renderImagePreview();
+    setManageStatus(`ตั้งรูปหลักของ ${product.name} แล้ว`);
+  } catch (error) {
+    const images = productImages(product);
+    const selected = images.find((image) => String(image.id) === String(imageId));
+    product.images = [selected, ...images.filter((image) => image !== selected)].filter(Boolean);
+    product.imageUrl = product.images[0]?.url || null;
+    render();
+    imageProductSelect.value = sku;
+    renderImagePreview();
+    setManageStatus("ตั้งรูปหลักเฉพาะในหน้าเว็บ เพราะยังไม่ต่อ server");
+  }
+}
+
+async function deleteProductImage(imageId) {
+  const sku = imageProductSelect.value;
+  const product = productBySku(sku);
+  if (!product || !imageId) return;
+
+  try {
+    const result = await apiRequest(`/api/products/${encodeURIComponent(sku)}/images/${imageId}`, {
+      method: "DELETE",
+    });
+
+    syncProducts(result.products);
+    imageProductSelect.value = sku;
+    renderImagePreview();
+    setManageStatus(`ลบรูปของ ${product.name} แล้ว`);
+  } catch (error) {
+    product.images = productImages(product).filter((image) => String(image.id) !== String(imageId));
+    product.imageUrl = product.images[0]?.url || null;
+    render();
+    imageProductSelect.value = sku;
+    renderImagePreview();
+    setManageStatus("ลบรูปเฉพาะในหน้าเว็บ เพราะยังไม่ต่อ server");
+  }
+}
+
+async function saveSelectedProductImage() {
+  const files = productImageFile.files;
+
+  if (!files.length) {
     setManageStatus("กรุณาเลือกรูปสินค้าก่อนบันทึก");
     return;
   }
@@ -830,13 +937,40 @@ async function saveSelectedProductImage() {
   setManageStatus("กำลังปรับขนาดรูปสินค้า...");
 
   try {
-    const imageUrl = await readImage(file);
-    await saveProductImage(imageUrl);
+    const imageUrls = await readImages(files);
+    await saveProductImages(imageUrls, false);
   } catch (error) {
     setManageStatus(`ยังบันทึกรูปไม่ได้: ${error.message}`);
   } finally {
     saveImageBtn.disabled = false;
   }
+}
+
+function openProductGallery(sku) {
+  const product = productBySku(sku);
+  if (!product) return;
+
+  const images = productImages(product);
+  galleryTitle.textContent = product.name;
+  galleryMeta.textContent = `${product.sku} · ${images.length.toLocaleString("th-TH")} รูป`;
+  galleryGrid.innerHTML = images.length
+    ? images
+        .map(
+          (image, index) => `
+            <button class="gallery-tile" type="button">
+              <img src="${image.url}" alt="${product.name} ${index + 1}" loading="lazy" />
+            </button>
+          `
+        )
+        .join("")
+    : '<div class="empty-state">ยังไม่มีรูปสินค้า</div>';
+  productGalleryModal.hidden = false;
+  document.body.classList.add("modal-open");
+}
+
+function closeProductGallery() {
+  productGalleryModal.hidden = true;
+  document.body.classList.remove("modal-open");
 }
 
 async function adjustStock() {
@@ -1131,17 +1265,38 @@ productForm.addEventListener("submit", addProduct);
 adjustStockBtn.addEventListener("click", adjustStock);
 imageProductSelect.addEventListener("change", renderImagePreview);
 productImageFile.addEventListener("change", () => {
-  const file = productImageFile.files[0];
-  if (!file) {
+  const files = [...productImageFile.files];
+  if (!files.length) {
     renderImagePreview();
     return;
   }
 
-  imagePreview.innerHTML = `<img class="product-photo preview" src="${URL.createObjectURL(file)}" alt="Selected product" />`;
+  imagePreview.innerHTML = files
+    .slice(0, 12)
+    .map((file, index) => `<img class="product-photo preview" src="${URL.createObjectURL(file)}" alt="Selected product ${index + 1}" />`)
+    .join("");
   imagePreview.classList.remove("is-empty");
 });
 saveImageBtn.addEventListener("click", saveSelectedProductImage);
-clearImageBtn.addEventListener("click", () => saveProductImage(""));
+clearImageBtn.addEventListener("click", () => saveProductImages([], true));
+imagePreview.addEventListener("click", (event) => {
+  const primaryImageId = event.target.dataset.primaryImageId;
+  const deleteImageId = event.target.dataset.deleteImageId;
+
+  if (primaryImageId) setPrimaryProductImage(primaryImageId);
+  if (deleteImageId) deleteProductImage(deleteImageId);
+});
+document.addEventListener("click", (event) => {
+  const galleryButton = event.target.closest("[data-gallery-sku]");
+  if (galleryButton) openProductGallery(galleryButton.dataset.gallerySku);
+});
+closeGalleryBtn.addEventListener("click", closeProductGallery);
+productGalleryModal.addEventListener("click", (event) => {
+  if (event.target === productGalleryModal) closeProductGallery();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !productGalleryModal.hidden) closeProductGallery();
+});
 salesForm.addEventListener("submit", saveSale);
 cancelSaleEditBtn.addEventListener("click", resetSaleForm);
 document.querySelector("#salesList").addEventListener("click", (event) => {

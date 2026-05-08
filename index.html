@@ -175,7 +175,7 @@
             </div>
             <label>
               รูปสินค้า
-              <input id="newProductImage" type="file" accept="image/*" />
+              <input id="newProductImage" type="file" accept="image/*" multiple />
             </label>
             <button type="submit">เพิ่มสินค้า</button>
           </form>
@@ -212,7 +212,7 @@
             <div id="imagePreview" class="image-preview is-empty"></div>
             <label>
               แนบ / เปลี่ยนรูป
-              <input id="productImageFile" type="file" accept="image/*" />
+              <input id="productImageFile" type="file" accept="image/*" multiple />
             </label>
             <div class="image-actions">
               <button id="saveImageBtn" type="button">บันทึกรูป</button>
@@ -371,6 +371,19 @@
         <div id="salesList" class="sales-list"></div>
       </section>
     </main>
+
+    <div id="productGalleryModal" class="gallery-modal" hidden>
+      <section class="gallery-dialog" aria-modal="true" role="dialog" aria-labelledby="galleryTitle">
+        <header class="gallery-header">
+          <div>
+            <p id="galleryMeta" class="eyebrow">0 รูป</p>
+            <h2 id="galleryTitle">รูปสินค้า</h2>
+          </div>
+          <button id="closeGalleryBtn" class="gallery-close" type="button" aria-label="ปิด">×</button>
+        </header>
+        <div id="galleryGrid" class="gallery-grid"></div>
+      </section>
+    </div>
 
     <script src="app.js"></script>
   </body>
