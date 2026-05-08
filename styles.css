@@ -237,15 +237,16 @@ button:hover {
 }
 
 .table-wrap {
-  overflow-x: auto;
+  overflow-x: visible;
   max-width: 100%;
   -webkit-overflow-scrolling: touch;
 }
 
 table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
-  min-width: 1120px;
+  min-width: 0;
 }
 
 th,
@@ -253,13 +254,49 @@ td {
   padding: 14px 12px;
   text-align: left;
   border-bottom: 1px solid var(--line);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: middle;
 }
 
 th {
   color: var(--muted);
-  font-size: 12px;
-  text-transform: uppercase;
+  font-size: 11px;
+  line-height: 1.35;
+  text-transform: none;
+}
+
+.number-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#products table th:nth-child(1),
+#products table td:nth-child(1),
+.manage-table-wrap table th:nth-child(1),
+.manage-table-wrap table td:nth-child(1) {
+  width: 24%;
+}
+
+#products table th:nth-child(2),
+#products table td:nth-child(2),
+.manage-table-wrap table th:nth-child(2),
+.manage-table-wrap table td:nth-child(2) {
+  width: 13%;
+}
+
+#products table th:nth-child(3),
+#products table td:nth-child(3),
+.manage-table-wrap table th:nth-child(3),
+.manage-table-wrap table td:nth-child(3) {
+  width: 12%;
+}
+
+#products table th:nth-child(6),
+#products table td:nth-child(6),
+.manage-table-wrap table th:nth-child(6),
+.manage-table-wrap table td:nth-child(6) {
+  width: 10%;
 }
 
 .product-name {
@@ -273,16 +310,16 @@ th {
 
 .product-identity {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
+  grid-template-columns: 44px minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
 .product-photo {
   display: block;
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #eef1ef;
@@ -559,7 +596,7 @@ th {
 }
 
 .manage-table-wrap table {
-  min-width: 1120px;
+  min-width: 0;
 }
 
 .tracking-manager {
@@ -1037,13 +1074,14 @@ th {
     padding: 0 14px 4px;
   }
 
-  table {
-    min-width: 760px;
-  }
-
   th,
   td {
-    padding: 11px 10px;
+    padding: 10px 6px;
+    font-size: 12px;
+  }
+
+  th {
+    font-size: 10px;
   }
 
   .alert-item,
