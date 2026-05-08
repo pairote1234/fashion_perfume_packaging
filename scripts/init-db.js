@@ -70,6 +70,13 @@ async function tableHasRows(connection, tableName) {
   }
 }
 
+async function ensureProductImageColumn(connection) {
+  const [columns] = await connection.query("SHOW COLUMNS FROM products LIKE 'image_url'");
+  if (columns.length) return;
+
+  await connection.query("ALTER TABLE products ADD COLUMN image_url LONGTEXT NULL AFTER reorder_point");
+}
+
 async function main() {
   const connection = await mysql.createConnection(config());
 
@@ -81,6 +88,7 @@ async function main() {
     const seedSql = firstSeedAt === -1 ? "" : schemaSql.slice(firstSeedAt);
 
     await connection.query(ddlSql);
+    await ensureProductImageColumn(connection);
 
     const alreadySeeded = await tableHasRows(connection, "products");
     if (!alreadySeeded && seedSql.trim()) {

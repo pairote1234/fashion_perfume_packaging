@@ -173,6 +173,10 @@
                 <input id="newReorder" type="number" min="0" step="1" required />
               </label>
             </div>
+            <label>
+              รูปสินค้า
+              <input id="newProductImage" type="file" accept="image/*" />
+            </label>
             <button type="submit">เพิ่มสินค้า</button>
           </form>
 
@@ -197,6 +201,23 @@
               </label>
             </div>
             <button id="adjustStockBtn" type="button">บันทึกจำนวน</button>
+          </section>
+
+          <section class="manager-card product-image-card">
+            <h3>รูปสินค้า</h3>
+            <label>
+              เลือกสินค้า
+              <select id="imageProductSelect"></select>
+            </label>
+            <div id="imagePreview" class="image-preview is-empty"></div>
+            <label>
+              แนบ / เปลี่ยนรูป
+              <input id="productImageFile" type="file" accept="image/*" />
+            </label>
+            <div class="image-actions">
+              <button id="saveImageBtn" type="button">บันทึกรูป</button>
+              <button id="clearImageBtn" class="danger-button" type="button">ลบรูป</button>
+            </div>
           </section>
         </div>
 

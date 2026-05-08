@@ -185,8 +185,14 @@ logoutBtn.textContent = "ออกจากระบบ";
 searchInput.closest(".top-actions").append(userBadge);
 userBadge.insertAdjacentElement("afterend", logoutBtn);
 const productForm = document.querySelector("#productForm");
+const newProductImage = document.querySelector("#newProductImage");
 const stockProductSelect = document.querySelector("#stockProductSelect");
 const adjustStockBtn = document.querySelector("#adjustStockBtn");
+const imageProductSelect = document.querySelector("#imageProductSelect");
+const productImageFile = document.querySelector("#productImageFile");
+const imagePreview = document.querySelector("#imagePreview");
+const saveImageBtn = document.querySelector("#saveImageBtn");
+const clearImageBtn = document.querySelector("#clearImageBtn");
 const manageTable = document.querySelector("#manageTable");
 const manageStatus = document.querySelector("#manageStatus");
 const trackingStatusForm = document.querySelector("#trackingStatusForm");
@@ -238,6 +244,67 @@ function formatDate(dateText) {
     month: "short",
     year: "numeric",
   }).format(new Date(dateText));
+}
+
+function productImageMarkup(product, size = "thumb") {
+  const imageUrl = product?.imageUrl;
+  const label = product?.name || "Product";
+
+  if (imageUrl) {
+    return `<img class="product-photo ${size}" src="${imageUrl}" alt="${label}" loading="lazy" />`;
+  }
+
+  return `<span class="product-photo placeholder ${size}" aria-hidden="true">SP</span>`;
+}
+
+function productIdentityMarkup(product) {
+  return `
+    <div class="product-identity">
+      ${productImageMarkup(product)}
+      <div class="product-name">
+        <strong>${product.name}</strong>
+        <small>${product.sku}</small>
+      </div>
+    </div>
+  `;
+}
+
+function readImage(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) {
+      resolve("");
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      reject(new Error("Please choose an image file"));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Cannot read image file"));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("Cannot load image"));
+      image.onload = () => {
+        const maxSide = 900;
+        const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+        const width = Math.max(1, Math.round(image.width * scale));
+        const height = Math.max(1, Math.round(image.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d");
+
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, width, height);
+        context.drawImage(image, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function filteredProducts() {
@@ -294,10 +361,7 @@ function renderProducts() {
 
     row.innerHTML = `
       <td>
-        <div class="product-name">
-          <strong>${product.name}</strong>
-          <small>${product.sku}</small>
-        </div>
+        ${productIdentityMarkup(product)}
       </td>
       <td>${product.category}</td>
       <td>${product.supplier}</td>
@@ -316,15 +380,21 @@ function renderManager() {
     .map((product) => `<option value="${product.sku}">${product.sku} - ${product.name}</option>`)
     .join("");
 
+  const selectedImageSku = imageProductSelect.value || products[0]?.sku || "";
+  imageProductSelect.innerHTML = products
+    .map((product) => `<option value="${product.sku}">${product.sku} - ${product.name}</option>`)
+    .join("");
+  imageProductSelect.value = products.some((product) => product.sku === selectedImageSku)
+    ? selectedImageSku
+    : products[0]?.sku || "";
+  renderImagePreview();
+
   manageTable.innerHTML = products
     .map(
       (product) => `
         <tr>
           <td>
-            <div class="product-name">
-              <strong>${product.name}</strong>
-              <small>${product.sku}</small>
-            </div>
+            ${productIdentityMarkup(product)}
           </td>
           <td>${product.category}</td>
           <td>${product.supplier}</td>
@@ -349,9 +419,12 @@ function renderAlerts() {
     .map(
       (product) => `
         <article class="alert-item">
-          <div>
+          <div class="product-identity">
+            ${productImageMarkup(product, "mini")}
+            <div>
             <strong>${product.name}</strong>
             <small>${product.sku} ต้องมีอย่างน้อย ${product.reorderPoint.toLocaleString("th-TH")} ชิ้น</small>
+            </div>
           </div>
           <span class="qty-pill low">${product.stock.toLocaleString("th-TH")}</span>
         </article>
@@ -368,9 +441,12 @@ function renderTopSellers() {
     .map(
       (product) => `
         <article class="seller-item">
-          <div>
+          <div class="product-identity">
+            ${productImageMarkup(product, "mini")}
+            <div>
             <strong>${product.name}</strong>
             <small>${product.category}</small>
+            </div>
           </div>
           <span class="qty-pill">${product.sold.toLocaleString("th-TH")}</span>
         </article>
@@ -680,6 +756,15 @@ async function addProduct(event) {
     reorderPoint: numberFromInput("#newReorder"),
   };
 
+  if (newProductImage.files[0]) {
+    try {
+      payload.imageUrl = await readImage(newProductImage.files[0]);
+    } catch (error) {
+      setManageStatus(`ยังอ่านรูปสินค้าไม่ได้: ${error.message}`);
+      return;
+    }
+  }
+
   try {
     const result = await apiRequest("/api/products", {
       method: "POST",
@@ -695,6 +780,62 @@ async function addProduct(event) {
     hydrateCategoryFilter();
     render();
     setManageStatus(`เพิ่มสินค้า ${sku} เฉพาะในหน้าเว็บ เพราะยังไม่ต่อ server`);
+  }
+}
+
+function renderImagePreview() {
+  const product = productBySku(imageProductSelect.value);
+
+  imagePreview.innerHTML = productImageMarkup(product, "preview");
+  imagePreview.classList.toggle("is-empty", !product?.imageUrl);
+  clearImageBtn.disabled = !product?.imageUrl;
+}
+
+async function saveProductImage(imageUrl) {
+  const sku = imageProductSelect.value;
+  const product = productBySku(sku);
+
+  if (!product) return;
+
+  try {
+    const result = await apiRequest(`/api/products/${encodeURIComponent(sku)}/image`, {
+      method: "PUT",
+      body: JSON.stringify({ imageUrl }),
+    });
+
+    syncProducts(result.products);
+    imageProductSelect.value = sku;
+    productImageFile.value = "";
+    renderImagePreview();
+    setManageStatus(`อัปเดตรูปสินค้า ${product.name} แล้ว`);
+  } catch (error) {
+    product.imageUrl = imageUrl;
+    productImageFile.value = "";
+    render();
+    imageProductSelect.value = sku;
+    renderImagePreview();
+    setManageStatus(`อัปเดตรูปเฉพาะในหน้าเว็บ เพราะยังไม่ต่อ server`);
+  }
+}
+
+async function saveSelectedProductImage() {
+  const file = productImageFile.files[0];
+
+  if (!file) {
+    setManageStatus("กรุณาเลือกรูปสินค้าก่อนบันทึก");
+    return;
+  }
+
+  saveImageBtn.disabled = true;
+  setManageStatus("กำลังปรับขนาดรูปสินค้า...");
+
+  try {
+    const imageUrl = await readImage(file);
+    await saveProductImage(imageUrl);
+  } catch (error) {
+    setManageStatus(`ยังบันทึกรูปไม่ได้: ${error.message}`);
+  } finally {
+    saveImageBtn.disabled = false;
   }
 }
 
@@ -988,6 +1129,19 @@ logoutBtn.addEventListener("click", async () => {
 });
 productForm.addEventListener("submit", addProduct);
 adjustStockBtn.addEventListener("click", adjustStock);
+imageProductSelect.addEventListener("change", renderImagePreview);
+productImageFile.addEventListener("change", () => {
+  const file = productImageFile.files[0];
+  if (!file) {
+    renderImagePreview();
+    return;
+  }
+
+  imagePreview.innerHTML = `<img class="product-photo preview" src="${URL.createObjectURL(file)}" alt="Selected product" />`;
+  imagePreview.classList.remove("is-empty");
+});
+saveImageBtn.addEventListener("click", saveSelectedProductImage);
+clearImageBtn.addEventListener("click", () => saveProductImage(""));
 salesForm.addEventListener("submit", saveSale);
 cancelSaleEditBtn.addEventListener("click", resetSaleForm);
 document.querySelector("#salesList").addEventListener("click", (event) => {

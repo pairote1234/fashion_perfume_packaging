@@ -34,7 +34,7 @@ const loginPassword = process.env.APP_PASSWORD || "?kapi@2026";
 const authSecret = process.env.AUTH_SECRET || "supplypilot-local-auth-secret";
 const authCookieName = "supplypilot_auth";
 
-app.use(express.json());
+app.use(express.json({ limit: "6mb" }));
 
 function parseCookies(cookieHeader = "") {
   return Object.fromEntries(
@@ -217,6 +217,7 @@ async function getProducts() {
       p.cost_price AS cost,
       p.stock_quantity AS stock,
       p.reorder_point AS reorderPoint,
+      p.image_url AS imageUrl,
       COALESCE(sold_items.sold, 0) AS sold
     FROM products p
     JOIN categories c ON c.id = p.category_id
@@ -229,7 +230,7 @@ async function getProducts() {
       GROUP BY soi.product_id
     ) sold_items ON sold_items.product_id = p.id
     WHERE p.status = 'active'
-    GROUP BY p.id, p.sku, p.name, c.name, s.name, p.selling_price, p.cost_price, p.stock_quantity, p.reorder_point, sold_items.sold
+    GROUP BY p.id, p.sku, p.name, c.name, s.name, p.selling_price, p.cost_price, p.stock_quantity, p.reorder_point, p.image_url, sold_items.sold
     ORDER BY p.id
   `);
 
@@ -332,8 +333,29 @@ app.get("/api/shipments", asyncRoute(async (_request, response) => {
   response.json(await getShipments());
 }));
 
+function normalizeImageUrl(value) {
+  if (!value) return null;
+  const imageUrl = String(value);
+  const validDataUrl = /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/i.test(imageUrl);
+
+  if (!validDataUrl) {
+    const error = new Error("Invalid image format");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (imageUrl.length > 5 * 1024 * 1024) {
+    const error = new Error("Image is too large");
+    error.statusCode = 413;
+    throw error;
+  }
+
+  return imageUrl;
+}
+
 app.post("/api/products", asyncRoute(async (request, response) => {
   const payload = request.body;
+  const imageUrl = normalizeImageUrl(payload.imageUrl);
 
   await transaction(async (connection) => {
     await connection.execute(
@@ -357,8 +379,8 @@ app.post("/api/products", asyncRoute(async (request, response) => {
     await connection.execute(
       `
         INSERT INTO products
-          (sku, name, category_id, supplier_id, selling_price, cost_price, stock_quantity, reorder_point)
-        SELECT ?, ?, c.id, s.id, ?, ?, ?, ?
+          (sku, name, category_id, supplier_id, selling_price, cost_price, stock_quantity, reorder_point, image_url)
+        SELECT ?, ?, c.id, s.id, ?, ?, ?, ?, ?
         FROM categories c
         JOIN suppliers s ON s.name = ?
         WHERE c.name = ?
@@ -370,6 +392,7 @@ app.post("/api/products", asyncRoute(async (request, response) => {
         Number(payload.cost || 0),
         Number(payload.stock || 0),
         Number(payload.reorderPoint || 0),
+        imageUrl,
         payload.supplier,
         payload.category,
       ]
@@ -385,6 +408,21 @@ app.post("/api/products", asyncRoute(async (request, response) => {
       [payload.sku]
     );
   });
+
+  response.json({ ok: true, products: await getProducts() });
+}));
+
+app.put("/api/products/:sku/image", asyncRoute(async (request, response) => {
+  const imageUrl = normalizeImageUrl(request.body?.imageUrl);
+  const [result] = await pool.execute(
+    "UPDATE products SET image_url = ? WHERE sku = ? AND status = 'active'",
+    [imageUrl, request.params.sku]
+  );
+
+  if (result.affectedRows === 0) {
+    response.status(404).json({ error: "Product not found" });
+    return;
+  }
 
   response.json({ ok: true, products: await getProducts() });
 }));
@@ -859,7 +897,7 @@ app.get("*", (_request, response) => {
 
 app.use((error, _request, response, _next) => {
   console.error(error);
-  response.status(500).json({ error: error.message || "Internal server error" });
+  response.status(error.statusCode || 500).json({ error: error.message || "Internal server error" });
 });
 
 app.listen(port, () => {
