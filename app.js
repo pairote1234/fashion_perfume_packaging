@@ -365,17 +365,17 @@ function renderMetrics() {
     if (!product) return sum;
     return sum + product.price * sale.qty;
   }, 0);
-  const stockValue = products.reduce((sum, product) => sum + product.cost * product.stock, 0);
+  const stockValue = products.reduce((sum, product) => sum + product.price * product.stock, 0);
   const totalUnits = products.reduce((sum, product) => sum + product.stock, 0);
   const lowStock = products.filter((product) => product.stock <= product.reorderPoint).length;
   const incomingUnits = shipments.reduce((sum, shipment) => sum + shipment.units, 0);
   const nearestShipment = [...shipments].sort((a, b) => new Date(a.eta) - new Date(b.eta))[0];
 
   document.querySelector("#monthlyRevenue").textContent = money(revenue);
-  document.querySelector("#monthlyOrders").textContent = `${sales.length} orders`;
+  document.querySelector("#monthlyOrders").textContent = `${sales.length.toLocaleString("th-TH")} รายการขาย`;
   document.querySelector("#stockValue").textContent = money(stockValue);
   document.querySelector("#totalUnits").textContent = totalUnits.toLocaleString("th-TH");
-  document.querySelector("#lowStockCount").textContent = `${lowStock} รายการใกล้หมด`;
+  document.querySelector("#lowStockCount").textContent = `${products.length.toLocaleString("th-TH")} SKU ทั้งหมด · ${lowStock.toLocaleString("th-TH")} รายการใกล้หมด`;
   document.querySelector("#incomingUnits").textContent = incomingUnits.toLocaleString("th-TH");
   document.querySelector("#nearestEta").textContent = nearestShipment
     ? `ถึงไทยใกล้สุด ${formatDate(nearestShipment.eta)}`
