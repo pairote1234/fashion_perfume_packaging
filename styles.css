@@ -245,7 +245,7 @@ button:hover {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 960px;
+  min-width: 1120px;
 }
 
 th,
@@ -559,7 +559,7 @@ th {
 }
 
 .manage-table-wrap table {
-  min-width: 900px;
+  min-width: 1120px;
 }
 
 .tracking-manager {

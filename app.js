@@ -396,6 +396,7 @@ function renderProducts() {
       <td>${product.category}</td>
       <td>${product.supplier}</td>
       <td>${money(product.price)}</td>
+      <td>${money(product.cost)}</td>
       <td>${product.sold.toLocaleString("th-TH")}</td>
       <td>${product.stock.toLocaleString("th-TH")}</td>
       <td><span class="status ${status.className}">${status.label}</span></td>
@@ -428,6 +429,8 @@ function renderManager() {
           </td>
           <td>${product.category}</td>
           <td>${product.supplier}</td>
+          <td>${money(product.price)}</td>
+          <td>${money(product.cost)}</td>
           <td>${product.stock.toLocaleString("th-TH")}</td>
           <td>${product.reorderPoint.toLocaleString("th-TH")}</td>
           <td>
