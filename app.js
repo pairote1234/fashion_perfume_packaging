@@ -197,6 +197,10 @@ const productGalleryModal = document.querySelector("#productGalleryModal");
 const galleryTitle = document.querySelector("#galleryTitle");
 const galleryMeta = document.querySelector("#galleryMeta");
 const galleryGrid = document.querySelector("#galleryGrid");
+const galleryActiveImage = document.querySelector("#galleryActiveImage");
+const galleryCounter = document.querySelector("#galleryCounter");
+const galleryPrevBtn = document.querySelector("#galleryPrevBtn");
+const galleryNextBtn = document.querySelector("#galleryNextBtn");
 const closeGalleryBtn = document.querySelector("#closeGalleryBtn");
 const manageTable = document.querySelector("#manageTable");
 const manageStatus = document.querySelector("#manageStatus");
@@ -227,6 +231,11 @@ const viewBlocks = {
   imports: document.querySelector("#imports"),
   sales: document.querySelector("#sales"),
   sideStack: document.querySelector(".side-stack"),
+};
+const galleryState = {
+  product: null,
+  images: [],
+  index: 0,
 };
 
 function money(value) {
@@ -951,21 +960,49 @@ function openProductGallery(sku) {
   if (!product) return;
 
   const images = productImages(product);
+  galleryState.product = product;
+  galleryState.images = images;
+  galleryState.index = 0;
   galleryTitle.textContent = product.name;
   galleryMeta.textContent = `${product.sku} · ${images.length.toLocaleString("th-TH")} รูป`;
-  galleryGrid.innerHTML = images.length
-    ? images
-        .map(
-          (image, index) => `
-            <button class="gallery-tile" type="button">
-              <img src="${image.url}" alt="${product.name} ${index + 1}" loading="lazy" />
-            </button>
-          `
-        )
-        .join("")
-    : '<div class="empty-state">ยังไม่มีรูปสินค้า</div>';
+  renderProductGallery();
   productGalleryModal.hidden = false;
   document.body.classList.add("modal-open");
+}
+
+function renderProductGallery() {
+  const { product, images, index } = galleryState;
+  const image = images[index];
+
+  if (!product || !image) {
+    galleryActiveImage.removeAttribute("src");
+    galleryCounter.textContent = "0 / 0";
+    galleryPrevBtn.disabled = true;
+    galleryNextBtn.disabled = true;
+    galleryGrid.innerHTML = '<div class="empty-state">ยังไม่มีรูปสินค้า</div>';
+    return;
+  }
+
+  galleryActiveImage.src = image.url;
+  galleryActiveImage.alt = `${product.name} ${index + 1}`;
+  galleryCounter.textContent = `${index + 1} / ${images.length}`;
+  galleryPrevBtn.disabled = images.length <= 1;
+  galleryNextBtn.disabled = images.length <= 1;
+  galleryGrid.innerHTML = images
+    .map(
+      (thumb, thumbIndex) => `
+        <button class="gallery-thumb ${thumbIndex === index ? "active" : ""}" type="button" data-gallery-index="${thumbIndex}">
+          <img src="${thumb.url}" alt="${product.name} ${thumbIndex + 1}" loading="lazy" />
+        </button>
+      `
+    )
+    .join("");
+}
+
+function moveGallery(delta) {
+  if (!galleryState.images.length) return;
+  galleryState.index = (galleryState.index + delta + galleryState.images.length) % galleryState.images.length;
+  renderProductGallery();
 }
 
 function closeProductGallery() {
@@ -1291,11 +1328,23 @@ document.addEventListener("click", (event) => {
   if (galleryButton) openProductGallery(galleryButton.dataset.gallerySku);
 });
 closeGalleryBtn.addEventListener("click", closeProductGallery);
+galleryPrevBtn.addEventListener("click", () => moveGallery(-1));
+galleryNextBtn.addEventListener("click", () => moveGallery(1));
+galleryGrid.addEventListener("click", (event) => {
+  const thumb = event.target.closest("[data-gallery-index]");
+  if (!thumb) return;
+
+  galleryState.index = Number(thumb.dataset.galleryIndex || 0);
+  renderProductGallery();
+});
 productGalleryModal.addEventListener("click", (event) => {
   if (event.target === productGalleryModal) closeProductGallery();
 });
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !productGalleryModal.hidden) closeProductGallery();
+  if (productGalleryModal.hidden) return;
+  if (event.key === "Escape") closeProductGallery();
+  if (event.key === "ArrowLeft") moveGallery(-1);
+  if (event.key === "ArrowRight") moveGallery(1);
 });
 salesForm.addEventListener("submit", saveSale);
 cancelSaleEditBtn.addEventListener("click", resetSaleForm);

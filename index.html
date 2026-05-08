@@ -381,7 +381,15 @@
           </div>
           <button id="closeGalleryBtn" class="gallery-close" type="button" aria-label="ปิด">×</button>
         </header>
-        <div id="galleryGrid" class="gallery-grid"></div>
+        <div class="gallery-viewer">
+          <button id="galleryPrevBtn" class="gallery-nav prev" type="button" aria-label="รูปก่อนหน้า">‹</button>
+          <figure class="gallery-main">
+            <img id="galleryActiveImage" alt="รูปสินค้า" />
+            <figcaption id="galleryCounter">1 / 1</figcaption>
+          </figure>
+          <button id="galleryNextBtn" class="gallery-nav next" type="button" aria-label="รูปถัดไป">›</button>
+        </div>
+        <div id="galleryGrid" class="gallery-strip"></div>
       </section>
     </div>
 
