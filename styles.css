@@ -1002,6 +1002,7 @@ th {
   .metrics-grid,
   .content-grid,
   .sales-list,
+  .side-stack,
   .shipment-list,
   .tracking-manager,
   .shipment-form-grid,
@@ -1010,6 +1011,138 @@ th {
   .customer-form-grid,
   .manager-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .side-stack {
+    grid-template-columns: 1fr;
+  }
+
+  #products .table-wrap,
+  .manage-table-wrap {
+    overflow: visible;
+  }
+
+  #products table,
+  #products thead,
+  #products tbody,
+  #products tr,
+  #products td,
+  .manage-table-wrap table,
+  .manage-table-wrap thead,
+  .manage-table-wrap tbody,
+  .manage-table-wrap tr,
+  .manage-table-wrap td {
+    display: block;
+    width: 100%;
+  }
+
+  #products thead,
+  .manage-table-wrap thead {
+    display: none;
+  }
+
+  #productTable,
+  #manageTable {
+    display: grid;
+    gap: 12px;
+  }
+
+  #productTable tr,
+  #manageTable tr {
+    display: grid;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  #productTable td,
+  #manageTable td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--line);
+    text-align: right;
+    font-size: 14px;
+  }
+
+  #productTable td:last-child,
+  #manageTable td:last-child {
+    border-bottom: 0;
+  }
+
+  #productTable td::before,
+  #manageTable td::before {
+    flex: 0 0 42%;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 800;
+    text-align: left;
+  }
+
+  #productTable td:first-child,
+  #manageTable td:first-child {
+    display: block;
+    text-align: left;
+  }
+
+  #productTable td:first-child::before,
+  #manageTable td:first-child::before {
+    display: none;
+  }
+
+  #productTable td:nth-child(2)::before,
+  #manageTable td:nth-child(2)::before {
+    content: "หมวดหมู่";
+  }
+
+  #productTable td:nth-child(3)::before,
+  #manageTable td:nth-child(3)::before {
+    content: "ซัพพลายเออร์";
+  }
+
+  #productTable td:nth-child(4)::before,
+  #manageTable td:nth-child(4)::before {
+    content: "ราคาขาย/ชิ้น";
+  }
+
+  #productTable td:nth-child(5)::before,
+  #manageTable td:nth-child(5)::before {
+    content: "ต้นทุนจริง/ชิ้น";
+  }
+
+  #productTable td:nth-child(6)::before {
+    content: "ขายแล้ว";
+  }
+
+  #productTable td:nth-child(7)::before,
+  #manageTable td:nth-child(6)::before {
+    content: "คงเหลือ";
+  }
+
+  #productTable td:nth-child(8)::before {
+    content: "สถานะ";
+  }
+
+  #manageTable td:nth-child(7)::before {
+    content: "จุดเตือนเติม";
+  }
+
+  #manageTable td:nth-child(8)::before {
+    content: "จัดการ";
+  }
+
+  #productTable .product-identity,
+  #manageTable .product-identity {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  #productTable .product-photo,
+  #manageTable .product-photo {
+    width: 56px;
+    height: 56px;
   }
 
 }
