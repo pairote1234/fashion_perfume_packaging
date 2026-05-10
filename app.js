@@ -175,6 +175,7 @@ const state = {
 const apiBaseUrl = window.location.protocol.startsWith("http") ? "" : "http://localhost:8088";
 
 const productTable = document.querySelector("#productTable");
+const productMobileList = document.querySelector("#productMobileList");
 const categoryFilter = document.querySelector("#categoryFilter");
 const searchInput = document.querySelector("#searchInput");
 const userBadge = document.createElement("span");
@@ -431,11 +432,13 @@ function renderMetrics() {
 
 function renderProducts() {
   productTable.innerHTML = "";
+  if (productMobileList) productMobileList.innerHTML = "";
 
   filteredProducts().forEach((product) => {
     const status = stockStatus(product);
     const actualCost = product.landedCost ?? product.cost;
     const row = document.createElement("tr");
+    const mobileCard = document.createElement("article");
 
     row.innerHTML = `
       <td>
@@ -451,6 +454,43 @@ function renderProducts() {
     `;
 
     productTable.appendChild(row);
+
+    if (productMobileList) {
+      mobileCard.className = "mobile-product-card";
+      mobileCard.innerHTML = `
+        <div class="mobile-product-head">
+          ${productIdentityMarkup(product)}
+          <span class="status ${status.className}">${status.label}</span>
+        </div>
+        <dl class="mobile-product-stats">
+          <div>
+            <dt>หมวดหมู่</dt>
+            <dd>${product.category}</dd>
+          </div>
+          <div>
+            <dt>ซัพพลายเออร์</dt>
+            <dd>${product.supplier}</dd>
+          </div>
+          <div>
+            <dt>ราคาขาย/ชิ้น</dt>
+            <dd>${money(product.price)}</dd>
+          </div>
+          <div>
+            <dt>ต้นทุนจริง/ชิ้น</dt>
+            <dd>${money(actualCost)}</dd>
+          </div>
+          <div>
+            <dt>ขายแล้ว</dt>
+            <dd>${product.sold.toLocaleString("th-TH")} ชิ้น</dd>
+          </div>
+          <div>
+            <dt>คงเหลือ</dt>
+            <dd>${product.stock.toLocaleString("th-TH")} ชิ้น</dd>
+          </div>
+        </dl>
+      `;
+      productMobileList.appendChild(mobileCard);
+    }
   });
 }
 
