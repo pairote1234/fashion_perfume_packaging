@@ -282,20 +282,6 @@ function movementLabel(value) {
   }[value] || value;
 }
 
-function productSalesStats(product) {
-  const actualCost = product.landedCost ?? product.cost;
-  const totalUnits = Number(product.sold || 0) + Number(product.stock || 0);
-  const salesTotal = Number(product.price || 0) * Number(product.sold || 0);
-  const totalCostBasis = actualCost * totalUnits;
-
-  return {
-    actualCost,
-    salesTotal,
-    soldPercent: totalUnits > 0 ? (Number(product.sold || 0) / totalUnits) * 100 : 0,
-    paybackPercent: totalCostBasis > 0 ? (salesTotal / totalCostBasis) * 100 : 0,
-  };
-}
-
 function productBySku(sku) {
   return products.find((product) => product.sku === sku);
 }
@@ -445,7 +431,7 @@ function renderProducts() {
 
   filteredProducts().forEach((product) => {
     const status = stockStatus(product);
-    const stats = productSalesStats(product);
+    const actualCost = product.landedCost ?? product.cost;
     const row = document.createElement("tr");
 
     row.innerHTML = `
@@ -455,12 +441,9 @@ function renderProducts() {
       <td>${product.category}</td>
       <td>${product.supplier}</td>
       <td class="number-cell">${money(product.price)}</td>
-      <td class="number-cell">${money(stats.actualCost)}</td>
-      <td class="number-cell">${money(stats.actualCost * product.stock)}</td>
-      <td class="number-cell">${money(stats.salesTotal)}</td>
+      <td class="number-cell">${money(actualCost)}</td>
+      <td class="number-cell">${money(actualCost * product.stock)}</td>
       <td class="number-cell">${product.sold.toLocaleString("th-TH")}</td>
-      <td class="number-cell">${percent(stats.soldPercent)}</td>
-      <td class="number-cell">${percent(stats.paybackPercent)}</td>
       <td class="number-cell">${product.stock.toLocaleString("th-TH")}</td>
       <td><span class="status ${status.className}">${status.label}</span></td>
     `;
@@ -485,7 +468,7 @@ function renderManager() {
 
   manageTable.innerHTML = products
     .map((product) => {
-      const stats = productSalesStats(product);
+      const actualCost = product.landedCost ?? product.cost;
       return `
         <tr>
           <td>
@@ -494,11 +477,8 @@ function renderManager() {
           <td>${product.category}</td>
           <td>${product.supplier}</td>
           <td class="number-cell">${money(product.price)}</td>
-          <td class="number-cell">${money(stats.actualCost)}</td>
-          <td class="number-cell">${money(stats.actualCost * product.stock)}</td>
-          <td class="number-cell">${money(stats.salesTotal)}</td>
-          <td class="number-cell">${percent(stats.soldPercent)}</td>
-          <td class="number-cell">${percent(stats.paybackPercent)}</td>
+          <td class="number-cell">${money(actualCost)}</td>
+          <td class="number-cell">${money(actualCost * product.stock)}</td>
           <td class="number-cell">${product.stock.toLocaleString("th-TH")}</td>
           <td class="number-cell">${product.reorderPoint.toLocaleString("th-TH")}</td>
           <td>
