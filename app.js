@@ -407,7 +407,10 @@ function renderMetrics() {
   }, 0);
   const saleCost = profitSummary.cost || sales.reduce((sum, sale) => sum + Number(sale.cost || 0), 0);
   const grossProfit = profitSummary.profit || revenue - saleCost;
-  const stockValue = products.reduce((sum, product) => sum + product.price * product.stock, 0);
+  const stockValue = products.reduce((sum, product) => {
+    const actualCost = product.landedCost ?? product.cost;
+    return sum + actualCost * product.stock;
+  }, 0);
   const totalUnits = products.reduce((sum, product) => sum + product.stock, 0);
   const lowStock = products.filter((product) => product.stock <= product.reorderPoint).length;
   const incomingUnits = shipments.reduce((sum, shipment) => sum + shipment.units, 0);
