@@ -292,13 +292,6 @@ th {
   width: 12%;
 }
 
-#products table th:nth-child(6),
-#products table td:nth-child(6),
-.manage-table-wrap table th:nth-child(6),
-.manage-table-wrap table td:nth-child(6) {
-  width: 10%;
-}
-
 .product-name {
   display: grid;
   gap: 4px;

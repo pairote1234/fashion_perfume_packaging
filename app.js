@@ -442,7 +442,6 @@ function renderProducts() {
       <td>${product.supplier}</td>
       <td class="number-cell">${money(product.price)}</td>
       <td class="number-cell">${money(actualCost)}</td>
-      <td class="number-cell">${money(actualCost * product.stock)}</td>
       <td class="number-cell">${product.sold.toLocaleString("th-TH")}</td>
       <td class="number-cell">${product.stock.toLocaleString("th-TH")}</td>
       <td><span class="status ${status.className}">${status.label}</span></td>
@@ -478,7 +477,6 @@ function renderManager() {
           <td>${product.supplier}</td>
           <td class="number-cell">${money(product.price)}</td>
           <td class="number-cell">${money(actualCost)}</td>
-          <td class="number-cell">${money(actualCost * product.stock)}</td>
           <td class="number-cell">${product.stock.toLocaleString("th-TH")}</td>
           <td class="number-cell">${product.reorderPoint.toLocaleString("th-TH")}</td>
           <td>
