@@ -27,6 +27,7 @@ function loadEnvFile(filePath) {
 loadEnvFile(path.join(root, ".env"));
 
 const databaseUrl = process.env.MYSQL_PUBLIC_URL || process.env.DATABASE_URL || process.env.MYSQL_URL;
+const allowSampleSeed = process.env.ALLOW_SAMPLE_SEED === "true";
 
 function config() {
   if (databaseUrl) {
@@ -145,12 +146,12 @@ async function main() {
     await ensureBusinessColumns(connection);
 
     const alreadySeeded = await tableHasRows(connection, "products");
-    if (!alreadySeeded && seedSql.trim()) {
+    if (allowSampleSeed && !alreadySeeded && seedSql.trim()) {
       await connection.query(seedSql);
     }
 
     const fixPath = path.join(root, "stock_fix_thai.sql");
-    if (fs.existsSync(fixPath)) {
+    if (allowSampleSeed && fs.existsSync(fixPath)) {
       await connection.query(readSql("stock_fix_thai.sql"));
     }
 

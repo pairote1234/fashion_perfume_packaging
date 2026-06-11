@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node server.js",
     "init-db": "node scripts/init-db.js",
-    "railway:start": "node scripts/init-db.js && node server.js"
+    "migrate": "node scripts/init-db.js",
+    "railway:start": "node server.js"
   },
   "engines": {
     "node": ">=20"
