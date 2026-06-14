@@ -52,6 +52,7 @@ const galleryPrevBtn = document.querySelector("#galleryPrevBtn");
 const galleryNextBtn = document.querySelector("#galleryNextBtn");
 const closeGalleryBtn = document.querySelector("#closeGalleryBtn");
 const manageTable = document.querySelector("#manageTable");
+const manageMobileList = document.querySelector("#manageMobileList");
 const manageStatus = document.querySelector("#manageStatus");
 const trackingStatusForm = document.querySelector("#trackingStatusForm");
 const trackingShipmentSelect = document.querySelector("#trackingShipmentSelect");
@@ -373,6 +374,48 @@ function renderManager() {
       `;
     })
     .join("");
+
+  if (manageMobileList) {
+    manageMobileList.innerHTML = products
+      .map((product) => {
+        const actualCost = product.landedCost ?? product.cost;
+        return `
+          <article class="mobile-manage-card">
+            <div class="mobile-manage-head">
+              ${productIdentityMarkup(product)}
+            </div>
+            <dl class="mobile-manage-stats">
+              <div>
+                <dt>หมวดหมู่</dt>
+                <dd>${product.category}</dd>
+              </div>
+              <div>
+                <dt>Supplier</dt>
+                <dd>${product.supplier}</dd>
+              </div>
+              <div>
+                <dt>ราคาขาย</dt>
+                <dd>${money(product.price)}</dd>
+              </div>
+              <div>
+                <dt>ต้นทุนจริง</dt>
+                <dd>${money(actualCost)}</dd>
+              </div>
+              <div>
+                <dt>คงเหลือ</dt>
+                <dd>${product.stock.toLocaleString("th-TH")} ชิ้น</dd>
+              </div>
+              <div>
+                <dt>จุดเตือนเติม</dt>
+                <dd>${product.reorderPoint.toLocaleString("th-TH")} ชิ้น</dd>
+              </div>
+            </dl>
+            <button class="danger-button mobile-delete-button" type="button" data-delete-sku="${product.sku}">ลบสินค้า</button>
+          </article>
+        `;
+      })
+      .join("");
+  }
 }
 
 function renderAlerts() {
