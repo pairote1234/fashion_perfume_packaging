@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Fashion & Perfume Supply Dashboard</title>
-    <link rel="stylesheet" href="styles.css?v=mobile-manage-20260614" />
+    <link rel="stylesheet" href="styles.css?v=monthly-report-20260614" />
   </head>
   <body>
     <aside class="sidebar">
@@ -42,14 +42,34 @@
         </div>
       </header>
 
+      <section class="report-filter" aria-label="ตัวกรองรายงาน">
+        <div>
+          <p class="eyebrow">Report period</p>
+          <h2 id="periodTitle">ดูข้อมูลทั้งหมด</h2>
+        </div>
+        <div class="report-filter-controls">
+          <label>
+            ช่วงข้อมูล
+            <select id="periodMode">
+              <option value="all">ทั้งหมด</option>
+              <option value="month">รายเดือน</option>
+            </select>
+          </label>
+          <label>
+            เดือน
+            <input id="periodMonth" type="month" />
+          </label>
+        </div>
+      </section>
+
       <section id="overview" class="metrics-grid" aria-label="ภาพรวมธุรกิจ">
         <article class="metric-card">
-          <span>ยอดขายเดือนนี้</span>
+          <span id="revenueLabel">ยอดขายทั้งหมด</span>
           <strong id="monthlyRevenue">฿0</strong>
           <small id="monthlyOrders">0 orders</small>
         </article>
         <article class="metric-card">
-          <span>ต้นทุนขายรวม</span>
+          <span id="salesCostLabel">ต้นทุนขายรวม</span>
           <strong id="salesCost">฿0</strong>
           <small>คิดจากต้นทุนจริงต่อชิ้น</small>
         </article>
@@ -59,7 +79,7 @@
           <small id="profitMargin">Margin 0%</small>
         </article>
         <article class="metric-card">
-          <span>ต้นทุน Stock คงเหลือ</span>
+          <span id="stockValueLabel">ต้นทุน Stock คงเหลือ</span>
           <strong id="stockValue">฿0</strong>
           <small id="stockSummary">0 ชิ้น</small>
         </article>
@@ -491,6 +511,6 @@
       </section>
     </div>
 
-    <script src="app.js?v=mobile-manage-20260614"></script>
+    <script src="app.js?v=monthly-report-20260614"></script>
   </body>
 </html>

@@ -15,6 +15,8 @@ const formatter = new Intl.NumberFormat("th-TH", {
 const state = {
   query: "",
   category: "all",
+  periodMode: "all",
+  periodMonth: new Date().toISOString().slice(0, 7),
 };
 const apiBaseUrl = window.location.protocol.startsWith("http") ? "" : "http://localhost:8088";
 
@@ -22,6 +24,9 @@ const productTable = document.querySelector("#productTable");
 const productMobileList = document.querySelector("#productMobileList");
 const categoryFilter = document.querySelector("#categoryFilter");
 const searchInput = document.querySelector("#searchInput");
+const periodMode = document.querySelector("#periodMode");
+const periodMonth = document.querySelector("#periodMonth");
+const periodTitle = document.querySelector("#periodTitle");
 const userBadge = document.createElement("span");
 userBadge.id = "userBadge";
 userBadge.className = "user-badge";
@@ -105,6 +110,22 @@ function percent(value) {
   return `${Number(value || 0).toLocaleString("th-TH", {
     maximumFractionDigits: 1,
   })}%`;
+}
+
+function periodLabel() {
+  if (state.periodMode !== "month") return "ทั้งหมด";
+  const [year, month] = state.periodMonth.split("-").map(Number);
+  const date = new Date(year, month - 1, 1);
+  return date.toLocaleDateString("th-TH", { month: "long", year: "numeric" });
+}
+
+function reportQueryString() {
+  if (state.periodMode !== "month") return "";
+  return `?period=month&month=${encodeURIComponent(state.periodMonth)}`;
+}
+
+function reportPath(path) {
+  return `${path}${reportQueryString()}`;
 }
 
 function saleStatusLabel(value) {
@@ -246,6 +267,14 @@ function hydrateCategoryFilter() {
 }
 
 function renderMetrics() {
+  const label = periodLabel();
+  if (periodTitle) {
+    periodTitle.textContent = state.periodMode === "month" ? `ดูข้อมูลเดือน ${label}` : "ดูข้อมูลทั้งหมด";
+  }
+  document.querySelector("#revenueLabel").textContent = state.periodMode === "month" ? `ยอดขายเดือน ${label}` : "ยอดขายทั้งหมด";
+  document.querySelector("#salesCostLabel").textContent = state.periodMode === "month" ? `ต้นทุนขายเดือน ${label}` : "ต้นทุนขายรวม";
+  document.querySelector("#stockValueLabel").textContent = state.periodMode === "month" ? `มูลค่า Stock คงเหลือเดือน ${label}` : "ต้นทุน Stock คงเหลือ";
+
   const revenue = profitSummary.revenue || sales.reduce((sum, sale) => {
     const product = productBySku(sale.sku);
     if (!product) return sum;
@@ -263,7 +292,7 @@ function renderMetrics() {
   const nearestShipment = [...shipments].sort((a, b) => new Date(a.eta) - new Date(b.eta))[0];
 
   document.querySelector("#monthlyRevenue").textContent = money(revenue);
-  document.querySelector("#monthlyOrders").textContent = `${sales.length.toLocaleString("th-TH")} รายการขาย`;
+  document.querySelector("#monthlyOrders").textContent = `${sales.length.toLocaleString("th-TH")} รายการขาย · ${label}`;
   document.querySelector("#salesCost").textContent = money(saleCost);
   document.querySelector("#profitValue").textContent = money(grossProfit);
   document.querySelector("#profitMargin").textContent = `Margin ${percent(profitSummary.margin || (revenue > 0 ? (grossProfit / revenue) * 100 : 0))}`;
@@ -730,8 +759,8 @@ function syncCustomers(nextCustomers) {
 
 async function refreshBusinessData() {
   const [databaseProfit, databaseMovements, databaseCustomers] = await Promise.all([
-    apiRequest("/api/profit-summary"),
-    apiRequest("/api/stock-movements"),
+    apiRequest(reportPath("/api/profit-summary")),
+    apiRequest(reportPath("/api/stock-movements")),
     apiRequest("/api/customers"),
   ]);
 
@@ -744,11 +773,11 @@ async function refreshBusinessData() {
 async function loadDashboardFromDatabase() {
   try {
     const [databaseProducts, databaseSales, databaseShipments, databaseProfit, databaseMovements, databaseCustomers] = await Promise.all([
-      apiRequest("/api/products"),
-      apiRequest("/api/sales"),
+      apiRequest(reportPath("/api/products")),
+      apiRequest(reportPath("/api/sales")),
       apiRequest("/api/shipments"),
-      apiRequest("/api/profit-summary"),
-      apiRequest("/api/stock-movements"),
+      apiRequest(reportPath("/api/profit-summary")),
+      apiRequest(reportPath("/api/stock-movements")),
       apiRequest("/api/customers"),
     ]);
 
@@ -1120,9 +1149,8 @@ async function adjustStock() {
       body: JSON.stringify({ sku, qty, action, reason }),
     });
 
-    syncProducts(result.products);
+    await loadDashboardFromDatabase();
     stockProductSelect.value = sku;
-    await refreshBusinessData();
     setManageStatus(`อัปเดต stock ของ ${product.name} ใน database แล้ว`);
   } catch (error) {
     if (action === "add") {
@@ -1338,10 +1366,8 @@ async function saveSale(event) {
       body: JSON.stringify(payload),
     });
 
-    syncProducts(result.products);
-    syncSales(result.sales);
     resetSaleForm();
-    await refreshBusinessData();
+    await loadDashboardFromDatabase();
     showView("sales");
     setSalesStatus(orderNo ? `แก้ไขยอดขาย ${orderNo} แล้ว` : "บันทึกยอดขายแล้ว");
   } catch (error) {
@@ -1401,10 +1427,8 @@ async function deleteSale(orderNo) {
       method: "DELETE",
     });
 
-    syncProducts(result.products);
-    syncSales(result.sales);
     resetSaleForm();
-    await refreshBusinessData();
+    await loadDashboardFromDatabase();
     showView("sales");
     setSalesStatus(`ลบยอดขาย ${orderNo} แล้ว`);
   } catch (error) {
@@ -1420,6 +1444,22 @@ searchInput.addEventListener("input", (event) => {
 categoryFilter.addEventListener("change", (event) => {
   state.category = event.target.value;
   renderProducts();
+});
+
+if (periodMonth) {
+  periodMonth.value = state.periodMonth;
+  periodMonth.disabled = true;
+}
+
+periodMode?.addEventListener("change", () => {
+  state.periodMode = periodMode.value;
+  if (periodMonth) periodMonth.disabled = state.periodMode !== "month";
+  loadDashboardFromDatabase();
+});
+
+periodMonth?.addEventListener("change", () => {
+  state.periodMonth = periodMonth.value || new Date().toISOString().slice(0, 7);
+  loadDashboardFromDatabase();
 });
 
 logoutBtn.addEventListener("click", async () => {

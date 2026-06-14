@@ -207,7 +207,59 @@ function toDateText(value) {
   return value.toISOString().slice(0, 10);
 }
 
-async function getProducts() {
+function monthRange(monthText) {
+  if (!/^\d{4}-\d{2}$/.test(monthText || "")) return null;
+  const start = `${monthText}-01`;
+  const [year, month] = monthText.split("-").map(Number);
+  const next = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+  return { start, end: next };
+}
+
+function reportPeriod(request) {
+  const mode = request.query.period === "month" ? "month" : "all";
+  const range = mode === "month" ? monthRange(request.query.month) : null;
+  return {
+    mode: range ? "month" : "all",
+    month: range ? request.query.month : "",
+    range,
+  };
+}
+
+function salesDateClause(period, alias = "so") {
+  if (!period.range) return { sql: "", params: [] };
+  return {
+    sql: ` AND ${alias}.order_date >= ? AND ${alias}.order_date < ?`,
+    params: [period.range.start, period.range.end],
+  };
+}
+
+function movementDateClause(period, alias = "im") {
+  if (!period.range) return { sql: "", params: [] };
+  return {
+    sql: ` WHERE ${alias}.created_at >= ? AND ${alias}.created_at < ?`,
+    params: [period.range.start, period.range.end],
+  };
+}
+
+async function getProducts(period = { mode: "all" }) {
+  const salesClause = salesDateClause(period);
+  const useSnapshot = Boolean(period.range);
+  const stockSelect = useSnapshot ? "COALESCE(stock_snapshot.balance_after, p.stock_quantity)" : "p.stock_quantity";
+  const stockJoin = useSnapshot
+    ? `
+    LEFT JOIN (
+      SELECT im.product_id, im.balance_after
+      FROM inventory_movements im
+      JOIN (
+        SELECT product_id, MAX(id) AS movement_id
+        FROM inventory_movements
+        WHERE created_at < ?
+        GROUP BY product_id
+      ) latest ON latest.movement_id = im.id
+    ) stock_snapshot ON stock_snapshot.product_id = p.id`
+    : "";
+  const stockParams = useSnapshot ? [period.range.end] : [];
+
   const rows = await query(`
     SELECT
       p.id,
@@ -220,7 +272,7 @@ async function getProducts() {
       p.shipping_cost AS shippingCost,
       p.tax_cost AS taxCost,
       p.other_cost AS otherCost,
-      p.stock_quantity AS stock,
+      ${stockSelect} AS stock,
       p.reorder_point AS reorderPoint,
       p.image_url AS imageUrl,
       COALESCE(sold_items.sold, 0) AS sold
@@ -232,12 +284,14 @@ async function getProducts() {
       FROM sales_order_items soi
       JOIN sales_orders so ON so.id = soi.sales_order_id
       WHERE so.status <> 'cancelled'
+      ${salesClause.sql}
       GROUP BY soi.product_id
     ) sold_items ON sold_items.product_id = p.id
+    ${stockJoin}
     WHERE p.status = 'active'
-    GROUP BY p.id, p.sku, p.name, c.name, s.name, p.selling_price, p.cost_price, p.shipping_cost, p.tax_cost, p.other_cost, p.stock_quantity, p.reorder_point, p.image_url, sold_items.sold
+    GROUP BY p.id, p.sku, p.name, c.name, s.name, p.selling_price, p.cost_price, p.shipping_cost, p.tax_cost, p.other_cost, p.stock_quantity, p.reorder_point, p.image_url, sold_items.sold${useSnapshot ? ", stock_snapshot.balance_after" : ""}
     ORDER BY p.id
-  `);
+  `, [...salesClause.params, ...stockParams]);
 
   const productRows = rows.map((row) => ({
     ...row,
@@ -285,7 +339,8 @@ async function getProducts() {
   });
 }
 
-async function getSales() {
+async function getSales(period = { mode: "all" }) {
+  const salesClause = salesDateClause(period);
   const rows = await query(`
     SELECT
       so.id AS order_id,
@@ -305,9 +360,10 @@ async function getSales() {
     JOIN products p ON p.id = soi.product_id
     LEFT JOIN customers c ON c.id = so.customer_id
     WHERE so.status <> 'cancelled'
+    ${salesClause.sql}
     ORDER BY so.order_date DESC, so.id DESC
     LIMIT 50
-  `);
+  `, salesClause.params);
 
   return rows.map((row) => ({
     ...row,
@@ -324,7 +380,8 @@ async function getSales() {
   }));
 }
 
-async function getProfitSummary() {
+async function getProfitSummary(period = { mode: "all" }) {
+  const salesClause = salesDateClause(period);
   const rows = await query(`
     SELECT
       COALESCE(SUM(soi.quantity * soi.unit_price), 0) AS revenue,
@@ -334,7 +391,8 @@ async function getProfitSummary() {
     FROM sales_orders so
     JOIN sales_order_items soi ON soi.sales_order_id = so.id
     WHERE so.status <> 'cancelled'
-  `);
+    ${salesClause.sql}
+  `, salesClause.params);
 
   const productRows = await query(`
     SELECT
@@ -348,10 +406,11 @@ async function getProfitSummary() {
     JOIN sales_order_items soi ON soi.sales_order_id = so.id
     JOIN products p ON p.id = soi.product_id
     WHERE so.status <> 'cancelled'
+    ${salesClause.sql}
     GROUP BY p.sku, p.name
     ORDER BY profit DESC, units DESC
     LIMIT 10
-  `);
+  `, salesClause.params);
 
   const summary = rows[0] || {};
   const revenue = Number(summary.revenue || 0);
@@ -380,7 +439,8 @@ async function getProfitSummary() {
   };
 }
 
-async function getStockMovements() {
+async function getStockMovements(period = { mode: "all" }) {
+  const movementClause = movementDateClause(period);
   const rows = await query(`
     SELECT
       im.id,
@@ -395,9 +455,10 @@ async function getStockMovements() {
       im.created_at
     FROM inventory_movements im
     JOIN products p ON p.id = im.product_id
+    ${movementClause.sql}
     ORDER BY im.created_at DESC, im.id DESC
     LIMIT 80
-  `);
+  `, movementClause.params);
 
   return rows.map((row) => ({
     id: Number(row.id),
@@ -491,24 +552,24 @@ async function getShipments() {
   return [...shipmentsByNo.values()];
 }
 
-app.get("/api/products", asyncRoute(async (_request, response) => {
-  response.json(await getProducts());
+app.get("/api/products", asyncRoute(async (request, response) => {
+  response.json(await getProducts(reportPeriod(request)));
 }));
 
-app.get("/api/sales", asyncRoute(async (_request, response) => {
-  response.json(await getSales());
+app.get("/api/sales", asyncRoute(async (request, response) => {
+  response.json(await getSales(reportPeriod(request)));
 }));
 
 app.get("/api/shipments", asyncRoute(async (_request, response) => {
   response.json(await getShipments());
 }));
 
-app.get("/api/profit-summary", asyncRoute(async (_request, response) => {
-  response.json(await getProfitSummary());
+app.get("/api/profit-summary", asyncRoute(async (request, response) => {
+  response.json(await getProfitSummary(reportPeriod(request)));
 }));
 
-app.get("/api/stock-movements", asyncRoute(async (_request, response) => {
-  response.json(await getStockMovements());
+app.get("/api/stock-movements", asyncRoute(async (request, response) => {
+  response.json(await getStockMovements(reportPeriod(request)));
 }));
 
 app.get("/api/customers", asyncRoute(async (_request, response) => {
