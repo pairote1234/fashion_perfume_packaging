@@ -770,6 +770,18 @@ async function refreshBusinessData() {
   render();
 }
 
+async function loadReportPeriods() {
+  try {
+    const periods = await apiRequest("/api/report-periods");
+    if (periods?.latestMonth && /^\d{4}-\d{2}$/.test(periods.latestMonth)) {
+      state.periodMonth = periods.latestMonth;
+      if (periodMonth) periodMonth.value = state.periodMonth;
+    }
+  } catch (error) {
+    if (periodMonth) periodMonth.value = state.periodMonth;
+  }
+}
+
 async function loadDashboardFromDatabase() {
   try {
     const [databaseProducts, databaseSales, databaseShipments, databaseProfit, databaseMovements, databaseCustomers] = await Promise.all([
@@ -1509,5 +1521,5 @@ document.querySelectorAll(".nav a").forEach((link) => {
 hydrateCategoryFilter();
 render();
 showView("overview");
-loadDashboardFromDatabase();
+loadReportPeriods().finally(loadDashboardFromDatabase);
 loadSessionUser();

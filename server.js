@@ -573,6 +573,33 @@ app.get("/api/shipments", asyncRoute(async (_request, response) => {
   response.json(await getShipments());
 }));
 
+app.get("/api/report-periods", asyncRoute(async (_request, response) => {
+  const rows = await query(`
+    SELECT DATE_FORMAT(MAX(order_date), '%Y-%m') AS latestSalesMonth
+    FROM sales_orders
+  `);
+  const fallbackRows = await query(`
+    SELECT DATE_FORMAT(MAX(created_at), '%Y-%m') AS latestActivityMonth
+    FROM inventory_movements
+  `);
+  const months = await query(`
+    SELECT month FROM (
+      SELECT DATE_FORMAT(order_date, '%Y-%m') AS month
+      FROM sales_orders
+      UNION
+      SELECT DATE_FORMAT(created_at, '%Y-%m') AS month
+      FROM inventory_movements
+    ) period_months
+    WHERE month IS NOT NULL
+    ORDER BY month DESC
+  `);
+
+  response.json({
+    latestMonth: rows[0]?.latestSalesMonth || fallbackRows[0]?.latestActivityMonth || new Date().toISOString().slice(0, 7),
+    months: months.map((row) => row.month),
+  });
+}));
+
 app.get("/api/profit-summary", asyncRoute(async (request, response) => {
   response.json(await getProfitSummary(reportPeriod(request)));
 }));
