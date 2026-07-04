@@ -37,6 +37,15 @@ const allowedSaleStatuses = new Set(["pending", "paid", "shipped", "cancelled"])
 
 app.use(express.json({ limit: "18mb" }));
 
+app.use((request, response, next) => {
+  if (request.path.startsWith("/api/") || request.accepts("html")) {
+    response.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    response.set("Pragma", "no-cache");
+    response.set("Expires", "0");
+  }
+  next();
+});
+
 function parseCookies(cookieHeader = "") {
   return Object.fromEntries(
     cookieHeader

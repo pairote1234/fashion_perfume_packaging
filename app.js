@@ -928,17 +928,7 @@ async function addProduct(event) {
     syncProducts(result.products);
     setManageStatus(`เพิ่มสินค้า ${sku} ลง database แล้ว`);
   } catch (error) {
-    products.push({
-      ...payload,
-      imageUrl: payload.imageUrls?.[0] || null,
-      images: (payload.imageUrls || []).map((url, index) => ({ id: `local-new-${index}`, url, isPrimary: index === 0 })),
-      landedCost: payload.cost + payload.shippingCost + payload.taxCost + payload.otherCost,
-      sold: 0,
-    });
-    productForm.reset();
-    hydrateCategoryFilter();
-    render();
-    setManageStatus(`เพิ่มสินค้า ${sku} เฉพาะในหน้าเว็บ เพราะยังไม่ต่อ server`);
+    setManageStatus(`ยังเพิ่มสินค้าไม่ได้: ${error.message}`);
   }
 }
 
@@ -990,21 +980,7 @@ async function saveProductImages(imageUrls, replace = false) {
     renderImagePreview();
     setManageStatus(`อัปเดตรูปสินค้า ${product.name} แล้ว`);
   } catch (error) {
-    const currentImages = productImages(product);
-    const nextImages = replace
-      ? imageUrls.map((url, index) => ({ id: `local-${index}`, url, isPrimary: index === 0 }))
-      : [
-          ...currentImages,
-          ...imageUrls.map((url, index) => ({ id: `local-${Date.now()}-${index}`, url, isPrimary: false })),
-        ];
-
-    product.images = nextImages;
-    product.imageUrl = nextImages[0]?.url || null;
-    productImageFile.value = "";
-    render();
-    imageProductSelect.value = sku;
-    renderImagePreview();
-    setManageStatus(`อัปเดตรูปเฉพาะในหน้าเว็บ เพราะยังไม่ต่อ server`);
+    setManageStatus(`ยังอัปเดตรูปไม่ได้: ${error.message}`);
   }
 }
 
@@ -1023,14 +999,7 @@ async function setPrimaryProductImage(imageId) {
     renderImagePreview();
     setManageStatus(`ตั้งรูปหลักของ ${product.name} แล้ว`);
   } catch (error) {
-    const images = productImages(product);
-    const selected = images.find((image) => String(image.id) === String(imageId));
-    product.images = [selected, ...images.filter((image) => image !== selected)].filter(Boolean);
-    product.imageUrl = product.images[0]?.url || null;
-    render();
-    imageProductSelect.value = sku;
-    renderImagePreview();
-    setManageStatus("ตั้งรูปหลักเฉพาะในหน้าเว็บ เพราะยังไม่ต่อ server");
+    setManageStatus(`ยังตั้งรูปหลักไม่ได้: ${error.message}`);
   }
 }
 
@@ -1049,12 +1018,7 @@ async function deleteProductImage(imageId) {
     renderImagePreview();
     setManageStatus(`ลบรูปของ ${product.name} แล้ว`);
   } catch (error) {
-    product.images = productImages(product).filter((image) => String(image.id) !== String(imageId));
-    product.imageUrl = product.images[0]?.url || null;
-    render();
-    imageProductSelect.value = sku;
-    renderImagePreview();
-    setManageStatus("ลบรูปเฉพาะในหน้าเว็บ เพราะยังไม่ต่อ server");
+    setManageStatus(`ยังลบรูปไม่ได้: ${error.message}`);
   }
 }
 
@@ -1153,21 +1117,7 @@ async function adjustStock() {
     stockProductSelect.value = sku;
     setManageStatus(`อัปเดต stock ของ ${product.name} ใน database แล้ว`);
   } catch (error) {
-    if (action === "add") {
-      product.stock += qty;
-    }
-
-    if (action === "remove") {
-      product.stock = Math.max(0, product.stock - qty);
-    }
-
-    if (action === "set") {
-      product.stock = qty;
-    }
-
-    render();
-    stockProductSelect.value = sku;
-    setManageStatus(`อัปเดต stock เฉพาะในหน้าเว็บ เพราะยังไม่ต่อ server`);
+    setManageStatus(`ยังอัปเดต stock ไม่ได้: ${error.message}`);
   }
 }
 
@@ -1186,17 +1136,7 @@ async function deleteProduct(sku) {
     syncProducts(result.products);
     setManageStatus(`ลบ ${removedProduct.name} จาก database แล้ว`);
   } catch (error) {
-    products.splice(productIndex, 1);
-
-    for (let index = sales.length - 1; index >= 0; index -= 1) {
-      if (sales[index].sku === sku) {
-        sales.splice(index, 1);
-      }
-    }
-
-    hydrateCategoryFilter();
-    render();
-    setManageStatus(`ลบ ${removedProduct.name} เฉพาะในหน้าเว็บ เพราะยังไม่ต่อ server`);
+    setManageStatus(`ยังลบ ${removedProduct.name} ไม่ได้: ${error.message}`);
   }
 }
 
@@ -1296,10 +1236,7 @@ async function deleteShipment(shipmentNo) {
     renderTrackingControls();
     setTrackingStatus(`ลบ Shipment ${shipment.id} แล้ว`);
   } catch (error) {
-    shipments.splice(shipmentIndex, 1);
-    render();
-    renderTrackingControls();
-    setTrackingStatus(`ลบ Shipment ${shipment.id} เฉพาะในหน้าเว็บ เพราะยังไม่ต่อ server`);
+    setTrackingStatus(`ยังลบ Shipment ${shipment.id} ไม่ได้: ${error.message}`);
   }
 }
 
