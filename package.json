@@ -1,8 +1,8 @@
 {
-  "name": "fashion-perfume-packaging",
+  "name": "jipatabykapi",
   "version": "1.0.0",
   "private": true,
-  "description": "SupplyPilot stock, sales, and import tracking dashboard.",
+  "description": "jipatabykapi stock, sales, and import tracking dashboard.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

@@ -1,6 +1,6 @@
-# SupplyPilot Web
+# jipatabykapi
 
-SupplyPilot is a Node.js + Express web app for stock, sales, shipment, and import tracking. It serves the dashboard from `index.html` and exposes MySQL-backed API endpoints from `server.js`.
+jipatabykapi is a Node.js + Express web app for stock, sales, shipment, and import tracking. It serves the dashboard from `index.html` and exposes MySQL-backed API endpoints from `server.js`.
 
 ## Tech Stack
 

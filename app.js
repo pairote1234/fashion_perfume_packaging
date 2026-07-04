@@ -791,7 +791,7 @@ async function loadDashboardFromDatabase() {
     render();
     setManageStatus("โหลดข้อมูลจาก database แล้ว");
   } catch (error) {
-    setManageStatus("ยังไม่ได้เชื่อมต่อ database: เปิดผ่าน Start SupplyPilot Web.bat");
+    setManageStatus("ยังไม่ได้เชื่อมต่อ database: เปิดผ่าน Start jipatabykapi Web.bat");
   }
 }
 
