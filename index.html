@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>jipatabykapi</title>
-    <link rel="stylesheet" href="styles.css?v=report-period-20260704" />
+    <link rel="stylesheet" href="styles.css?v=product-edit-20260704" />
   </head>
   <body>
     <aside class="sidebar">
@@ -156,7 +156,7 @@
 
         <div class="manager-grid">
           <form id="productForm" class="manager-card">
-            <h3>เพิ่มสินค้าใหม่</h3>
+            <h3 id="productFormTitle">เพิ่มสินค้าใหม่</h3>
             <label>
               SKU
               <input id="newSku" type="text" placeholder="เช่น SHIRT-TS-010 หรือ PKG-DIFF-200" required />
@@ -220,7 +220,10 @@
               รูปสินค้า
               <input id="newProductImage" type="file" accept="image/*" multiple />
             </label>
-            <button type="submit">เพิ่มสินค้า</button>
+            <div class="form-actions">
+              <button id="productSubmitBtn" type="submit">เพิ่มสินค้า</button>
+              <button id="cancelProductEditBtn" class="secondary-button" type="button" hidden>ยกเลิกแก้ไข</button>
+            </div>
           </form>
 
           <section class="manager-card">
@@ -511,6 +514,6 @@
       </section>
     </div>
 
-    <script src="app.js?v=report-period-20260704"></script>
+    <script src="app.js?v=product-edit-20260704"></script>
   </body>
 </html>

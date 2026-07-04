@@ -17,6 +17,7 @@ const state = {
   category: "all",
   periodMode: "all",
   periodMonth: new Date().toISOString().slice(0, 7),
+  editingProductSku: "",
 };
 const apiBaseUrl = window.location.protocol.startsWith("http") ? "" : "http://localhost:8088";
 
@@ -39,6 +40,9 @@ logoutBtn.textContent = "ออกจากระบบ";
 searchInput.closest(".top-actions").append(userBadge);
 userBadge.insertAdjacentElement("afterend", logoutBtn);
 const productForm = document.querySelector("#productForm");
+const productFormTitle = document.querySelector("#productFormTitle");
+const productSubmitBtn = document.querySelector("#productSubmitBtn");
+const cancelProductEditBtn = document.querySelector("#cancelProductEditBtn");
 const newProductImage = document.querySelector("#newProductImage");
 const stockProductSelect = document.querySelector("#stockProductSelect");
 const adjustStockBtn = document.querySelector("#adjustStockBtn");
@@ -397,6 +401,7 @@ function renderManager() {
           <td class="number-cell">${product.stock.toLocaleString("th-TH")}</td>
           <td class="number-cell">${product.reorderPoint.toLocaleString("th-TH")}</td>
           <td>
+            <button class="secondary-button" type="button" data-edit-sku="${product.sku}">แก้ไข</button>
             <button class="danger-button" type="button" data-delete-sku="${product.sku}">ลบ</button>
           </td>
         </tr>
@@ -439,7 +444,10 @@ function renderManager() {
                 <dd>${product.reorderPoint.toLocaleString("th-TH")} ชิ้น</dd>
               </div>
             </dl>
-            <button class="danger-button mobile-delete-button" type="button" data-delete-sku="${product.sku}">ลบสินค้า</button>
+            <div class="form-actions">
+              <button class="secondary-button" type="button" data-edit-sku="${product.sku}">แก้ไขสินค้า</button>
+              <button class="danger-button mobile-delete-button" type="button" data-delete-sku="${product.sku}">ลบสินค้า</button>
+            </div>
           </article>
         `;
       })
@@ -897,12 +905,49 @@ function numberFromInput(selector) {
   return Number(document.querySelector(selector).value || 0);
 }
 
+function setProductFormMode(product = null) {
+  state.editingProductSku = product?.sku || "";
+  if (productFormTitle) productFormTitle.textContent = product ? `แก้ไขสินค้า ${product.sku}` : "เพิ่มสินค้าใหม่";
+  if (productSubmitBtn) productSubmitBtn.textContent = product ? "บันทึกการแก้ไข" : "เพิ่มสินค้า";
+  if (cancelProductEditBtn) cancelProductEditBtn.hidden = !product;
+}
+
+function resetProductForm() {
+  productForm.reset();
+  document.querySelector("#newShippingCost").value = "0";
+  document.querySelector("#newTaxCost").value = "0";
+  document.querySelector("#newOtherCost").value = "0";
+  setProductFormMode(null);
+}
+
+function startProductEdit(sku) {
+  const product = productBySku(sku);
+  if (!product) return;
+
+  document.querySelector("#newSku").value = product.sku;
+  document.querySelector("#newName").value = product.name;
+  document.querySelector("#newCategory").value = product.category;
+  document.querySelector("#newSupplier").value = product.supplier;
+  document.querySelector("#newPrice").value = product.price;
+  document.querySelector("#newCost").value = product.cost;
+  document.querySelector("#newShippingCost").value = product.shippingCost || 0;
+  document.querySelector("#newTaxCost").value = product.taxCost || 0;
+  document.querySelector("#newOtherCost").value = product.otherCost || 0;
+  document.querySelector("#newStock").value = product.stock;
+  document.querySelector("#newReorder").value = product.reorderPoint;
+  newProductImage.value = "";
+  setProductFormMode(product);
+  productForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  setManageStatus(`กำลังแก้ไข ${product.name}`);
+}
+
 async function addProduct(event) {
   event.preventDefault();
 
   const sku = document.querySelector("#newSku").value.trim().toUpperCase();
+  const editingSku = state.editingProductSku;
 
-  if (products.some((product) => product.sku === sku)) {
+  if (products.some((product) => product.sku === sku && product.sku !== editingSku)) {
     setManageStatus(`SKU ${sku} มีอยู่แล้ว`);
     return;
   }
@@ -931,16 +976,16 @@ async function addProduct(event) {
   }
 
   try {
-    const result = await apiRequest("/api/products", {
-      method: "POST",
+    const result = await apiRequest(editingSku ? `/api/products/${encodeURIComponent(editingSku)}` : "/api/products", {
+      method: editingSku ? "PUT" : "POST",
       body: JSON.stringify(payload),
     });
 
-    productForm.reset();
+    resetProductForm();
     syncProducts(result.products);
-    setManageStatus(`เพิ่มสินค้า ${sku} ลง database แล้ว`);
+    setManageStatus(editingSku ? `บันทึกการแก้ไข ${sku} ลง database แล้ว` : `เพิ่มสินค้า ${sku} ลง database แล้ว`);
   } catch (error) {
-    setManageStatus(`ยังเพิ่มสินค้าไม่ได้: ${error.message}`);
+    setManageStatus(`${editingSku ? "ยังแก้ไขสินค้าไม่ได้" : "ยังเพิ่มสินค้าไม่ได้"}: ${error.message}`);
   }
 }
 
@@ -1146,6 +1191,7 @@ async function deleteProduct(sku) {
     });
 
     syncProducts(result.products);
+    if (state.editingProductSku === sku) resetProductForm();
     setManageStatus(`ลบ ${removedProduct.name} จาก database แล้ว`);
   } catch (error) {
     setManageStatus(`ยังลบ ${removedProduct.name} ไม่ได้: ${error.message}`);
@@ -1416,6 +1462,7 @@ logoutBtn.addEventListener("click", async () => {
   window.location.href = "/login";
 });
 productForm.addEventListener("submit", addProduct);
+cancelProductEditBtn?.addEventListener("click", resetProductForm);
 adjustStockBtn.addEventListener("click", adjustStock);
 imageProductSelect.addEventListener("change", renderImagePreview);
 productImageFile.addEventListener("change", () => {
@@ -1497,7 +1544,25 @@ document.querySelector("#shipmentList").addEventListener("click", (event) => {
   }
 });
 manageTable.addEventListener("click", (event) => {
+  const editSku = event.target.dataset.editSku;
   const deleteSku = event.target.dataset.deleteSku;
+
+  if (editSku) {
+    startProductEdit(editSku);
+  }
+
+  if (deleteSku) {
+    deleteProduct(deleteSku);
+  }
+});
+
+manageMobileList?.addEventListener("click", (event) => {
+  const editSku = event.target.dataset.editSku;
+  const deleteSku = event.target.dataset.deleteSku;
+
+  if (editSku) {
+    startProductEdit(editSku);
+  }
 
   if (deleteSku) {
     deleteProduct(deleteSku);

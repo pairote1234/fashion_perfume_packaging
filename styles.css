@@ -499,7 +499,8 @@ th {
 }
 
 .sale-actions,
-.sales-form-actions {
+.sales-form-actions,
+.form-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;

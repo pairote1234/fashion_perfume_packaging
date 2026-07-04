@@ -662,6 +662,17 @@ function normalizeImageUrls(value) {
   return values.map(normalizeImageUrl).filter(Boolean).slice(0, 20);
 }
 
+function textPayload(value) {
+  if (Array.isArray(value) || value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
+function numberPayload(value) {
+  if (Array.isArray(value)) return 0;
+  const numericValue = Number(value || 0);
+  return Number.isFinite(numericValue) ? Math.max(0, numericValue) : 0;
+}
+
 async function insertProductImages(connection, sku, imageUrls, replace = false) {
   if (replace) {
     await connection.execute(
@@ -735,7 +746,16 @@ async function insertProductImages(connection, sku, imageUrls, replace = false) 
 
 app.post("/api/products", asyncRoute(async (request, response) => {
   const payload = request.body;
+  const sku = textPayload(payload.sku).toUpperCase();
+  const name = textPayload(payload.name);
+  const category = textPayload(payload.category);
+  const supplier = textPayload(payload.supplier);
   const imageUrls = normalizeImageUrls(payload.imageUrls || payload.imageUrl);
+
+  if (!sku || !name || !category || !supplier) {
+    response.status(400).json({ error: "SKU, name, category and supplier are required" });
+    return;
+  }
 
   await transaction(async (connection) => {
     await connection.execute(
@@ -744,7 +764,7 @@ app.post("/api/products", asyncRoute(async (request, response) => {
         VALUES (?, SUBSTRING_INDEX(?, ' / ', 1))
         ON DUPLICATE KEY UPDATE parent_name = VALUES(parent_name)
       `,
-      [payload.category, payload.category]
+      [category, category]
     );
 
     await connection.execute(
@@ -753,7 +773,7 @@ app.post("/api/products", asyncRoute(async (request, response) => {
         VALUES (?, 'China')
         ON DUPLICATE KEY UPDATE name = VALUES(name)
       `,
-      [payload.supplier]
+      [supplier]
     );
 
     await connection.execute(
@@ -766,18 +786,18 @@ app.post("/api/products", asyncRoute(async (request, response) => {
         WHERE c.name = ?
       `,
       [
-        payload.sku,
-        payload.name,
-        Number(payload.price || 0),
-        Number(payload.cost || 0),
-        Number(payload.shippingCost || 0),
-        Number(payload.taxCost || 0),
-        Number(payload.otherCost || 0),
-        Number(payload.stock || 0),
-        Number(payload.reorderPoint || 0),
+        sku,
+        name,
+        numberPayload(payload.price),
+        numberPayload(payload.cost),
+        numberPayload(payload.shippingCost),
+        numberPayload(payload.taxCost),
+        numberPayload(payload.otherCost),
+        numberPayload(payload.stock),
+        numberPayload(payload.reorderPoint),
         imageUrls[0] || null,
-        payload.supplier,
-        payload.category,
+        supplier,
+        category,
       ]
     );
 
@@ -788,11 +808,129 @@ app.post("/api/products", asyncRoute(async (request, response) => {
         FROM products
         WHERE sku = ?
       `,
-      [request.authUser || loginUser, payload.sku]
+      [request.authUser || loginUser, sku]
     );
 
-    await insertProductImages(connection, payload.sku, imageUrls, true);
+    await insertProductImages(connection, sku, imageUrls, true);
   });
+
+  response.json({ ok: true, products: await getProducts() });
+}));
+
+app.put("/api/products/:sku", asyncRoute(async (request, response) => {
+  const payload = request.body || {};
+  const originalSku = request.params.sku;
+  const nextSku = textPayload(payload.sku).toUpperCase();
+  const name = textPayload(payload.name);
+  const category = textPayload(payload.category);
+  const supplier = textPayload(payload.supplier);
+  const imageUrls = normalizeImageUrls(payload.imageUrls || payload.imageUrl);
+
+  if (!nextSku || !name || !category || !supplier) {
+    response.status(400).json({ error: "SKU, name, category and supplier are required" });
+    return;
+  }
+
+  const result = await transaction(async (connection) => {
+    const [existingRows] = await connection.execute(
+      "SELECT id, sku, stock_quantity FROM products WHERE sku = ? AND status = 'active'",
+      [originalSku]
+    );
+
+    if (!existingRows.length) return { found: false };
+
+    const productId = existingRows[0].id;
+    const previousStock = Number(existingRows[0].stock_quantity || 0);
+    const nextStock = numberPayload(payload.stock);
+
+    if (nextSku !== originalSku) {
+      const [duplicateRows] = await connection.execute(
+        "SELECT id FROM products WHERE sku = ? AND id <> ?",
+        [nextSku, productId]
+      );
+
+      if (duplicateRows.length) return { duplicate: true };
+    }
+
+    await connection.execute(
+      `
+        INSERT INTO categories (name, parent_name)
+        VALUES (?, SUBSTRING_INDEX(?, ' / ', 1))
+        ON DUPLICATE KEY UPDATE parent_name = VALUES(parent_name)
+      `,
+      [category, category]
+    );
+
+    await connection.execute(
+      `
+        INSERT INTO suppliers (name, country)
+        VALUES (?, 'China')
+        ON DUPLICATE KEY UPDATE name = VALUES(name)
+      `,
+      [supplier]
+    );
+
+    await connection.execute(
+      `
+        UPDATE products p
+        JOIN categories c ON c.name = ?
+        JOIN suppliers s ON s.name = ?
+        SET
+          p.sku = ?,
+          p.name = ?,
+          p.category_id = c.id,
+          p.supplier_id = s.id,
+          p.selling_price = ?,
+          p.cost_price = ?,
+          p.shipping_cost = ?,
+          p.tax_cost = ?,
+          p.other_cost = ?,
+          p.stock_quantity = ?,
+          p.reorder_point = ?
+        WHERE p.id = ?
+      `,
+      [
+        category,
+        supplier,
+        nextSku,
+        name,
+        numberPayload(payload.price),
+        numberPayload(payload.cost),
+        numberPayload(payload.shippingCost),
+        numberPayload(payload.taxCost),
+        numberPayload(payload.otherCost),
+        nextStock,
+        numberPayload(payload.reorderPoint),
+        productId,
+      ]
+    );
+
+    if (nextStock !== previousStock) {
+      await connection.execute(
+        `
+          INSERT INTO inventory_movements (product_id, movement_type, quantity, balance_after, reference_type, note, created_by)
+          VALUES (?, 'set_balance', ?, ?, 'web_edit', 'แก้ไขข้อมูลสินค้า', ?)
+        `,
+        [productId, Math.abs(nextStock - previousStock), nextStock, request.authUser || loginUser]
+      );
+    }
+
+    if (imageUrls.length) {
+      await insertProductImages(connection, nextSku, imageUrls, true);
+    }
+
+    return { found: true };
+  });
+
+  if (result.duplicate) {
+    response.status(409).json({ error: "SKU already exists" });
+    return;
+  }
+
+  if (!result.found) {
+    response.status(404).json({ error: "Product not found" });
+    return;
+  }
 
   response.json({ ok: true, products: await getProducts() });
 }));
